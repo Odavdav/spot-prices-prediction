@@ -1,12 +1,4 @@
 """
-Collecte des données ENTSO-E pour le projet « heures à prix négatif » (day-ahead France).
-
-Règle anti-fuite : on ne télécharge que des grandeurs connues à J-1 12 h (clôture du DA) :
-  - prix day-ahead FR (la cible) ;
-  - prévisions day-ahead de consommation (FR et DE) ;
-  - prévisions day-ahead solaire / éolien (FR et DE) ;
-  - capacités installées annuelles FR (pour normaliser le solaire).
-
 Usage :
     export ENTSOE_API_KEY="ton-jeton"        # Windows PowerShell : $env:ENTSOE_API_KEY="ton-jeton"
     python get_data.py                       # 2015-01-01 -> aujourd'hui
@@ -20,13 +12,14 @@ import argparse
 import os
 import time
 from pathlib import Path
+from src.config import DATA_PROCESSED, DATASET_PATH, ROOT
 
 import pandas as pd
 from entsoe import EntsoePandasClient
 from entsoe.exceptions import NoMatchingDataError
 
-RAW = Path("data/raw")
-OUT = Path("data/processed")
+RAW = ROOT / "data" / "raw"
+OUT = DATA_PROCESSED
 TZ = "Europe/Paris"
 
 FR = "FR"
@@ -161,7 +154,7 @@ def main():
     raw["capacity_FR"] = fetch(client, "capacity", FR, start, end)
 
     df = build_dataset(raw)
-    df.to_parquet(OUT / "dataset_hourly.parquet")
+    df.to_parquet(DATASET_PATH)
     report(df)
     print(f"\nÉcrit : {OUT / 'dataset_hourly.parquet'}")
 
