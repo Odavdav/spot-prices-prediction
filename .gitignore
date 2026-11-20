@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Environnements virtuels
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Données (régénérables via src/get_data.py)
+data/
