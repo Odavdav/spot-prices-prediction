@@ -5,6 +5,9 @@
 __pycache__/
 *.py[cod]
 
+# Secrets
+.env
+
 # Environnements virtuels
 .venv/
 venv/
@@ -14,3 +17,6 @@ venv/
 
 # Données (régénérables via src/get_data.py)
 data/
+
+# Éditeur
+.vscode/

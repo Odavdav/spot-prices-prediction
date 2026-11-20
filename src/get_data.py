@@ -1,6 +1,6 @@
 """
 Usage :
-    export ENTSOE_API_KEY="ton-jeton"        # Windows PowerShell : $env:ENTSOE_API_KEY="ton-jeton"
+    cp .env.example .env  puis y renseigner ENTSOE_API_KEY (lu automatiquement)
     python get_data.py                       # 2015-01-01 -> aujourd'hui
     python get_data.py --start 2019-01-01 --end 2026-01-01
 
@@ -15,6 +15,7 @@ from pathlib import Path
 from src.config import DATA_PROCESSED, DATASET_PATH, ROOT
 
 import pandas as pd
+from dotenv import load_dotenv
 from entsoe import EntsoePandasClient
 from entsoe.exceptions import NoMatchingDataError
 
@@ -137,9 +138,10 @@ def main():
     ap.add_argument("--end", default=None, help="exclu ; par défaut demain 00:00")
     args = ap.parse_args()
 
+    load_dotenv(ROOT / ".env")
     key = os.environ.get("ENTSOE_API_KEY")
     if not key:
-        raise SystemExit("Variable d'environnement ENTSOE_API_KEY absente (voir l'en-tête du script).")
+        raise SystemExit("ENTSOE_API_KEY absente : la renseigner dans .env (voir .env.example).")
 
     start = pd.Timestamp(args.start, tz=TZ)
     end = pd.Timestamp(args.end, tz=TZ) if args.end else pd.Timestamp.now(tz=TZ).normalize() + pd.Timedelta(days=1)
