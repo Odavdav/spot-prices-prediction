@@ -6,5 +6,7 @@ B1 vs LEAR_quotidien,0.4301,0.7737,0.4391,365.0,5.0
 B1_hebdo vs LEAR_hebdo,-0.3841,-0.7235,0.4693,365.0,5.0
 B2_hebdo vs B2,-0.6465,-3.0492,0.0023,365.0,5.0
 B2_hebdo vs LEAR_quotidien,-1.2557,-2.6394,0.0083,365.0,5.0
+B2_rl_hebdo vs B2_hebdo,0.0388,0.3335,0.7387,365.0,5.0
+B2_rl_hebdo vs B2_brut_hebdo,-0.0579,-0.3029,0.762,365.0,5.0
 LEAR_quotidien vs LEAR_mensuel,-2.7049,-3.7905,0.0002,365.0,5.0
 B2 vs MSTL,-4.6048,-7.0417,0.0,365.0,5.0
