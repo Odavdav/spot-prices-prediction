@@ -16,6 +16,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
+from src.benchmarks import BENCHMARKS
 from src.config import PERIODS, PREDICTIONS_DIR, RESULTS, SEED, TZ
 from src.data import load_dataset
 from src.features import STEPS, add_features, get_X, get_y, to_price
@@ -90,9 +91,11 @@ def metrics(preds: pd.DataFrame, f: pd.DataFrame) -> pd.DataFrame:
 
 # --------------------------------------------------------------------- main
 def main():
+    models = list(STEPS) + list(BENCHMARKS)
     ap = argparse.ArgumentParser()
     ap.add_argument("--period", choices=list(PERIODS), default="validation")
-    ap.add_argument("--steps", nargs="+", default=list(STEPS))
+    ap.add_argument("--models", nargs="+", choices=models, default=models,
+                    help="modèles à (re)calculer ; les autres sont relus dans les prédictions déjà sauvées")
     args = ap.parse_args()
     if args.period == "test":
         print("ATTENTION : période de test. À ne lancer qu'une fois les choix figés sur la validation.")
@@ -101,15 +104,23 @@ def main():
     f = add_features(load_dataset())
     in_period = (f["time_local"] >= pd.Timestamp(start, tz=TZ)) & (f["time_local"] < pd.Timestamp(end, tz=TZ))
 
-    preds = pd.DataFrame({name: f.loc[in_period, col] for name, col in NAIVE.items()})
-    for step in args.steps:
-        preds[step] = walk_forward(f, step, start, end)
+    path = PREDICTIONS_DIR / f"predictions_{args.period}.parquet"
+    preds = pd.read_parquet(path) if path.exists() else pd.DataFrame(index=f.index[in_period])
+    for name, col in NAIVE.items():
+        preds[name] = f.loc[preds.index, col]
+    for name in args.models:
+        if name in STEPS:
+            preds[name] = walk_forward(f, name, start, end)
+        else:
+            preds[name] = BENCHMARKS[name](f, start, end)
+    order = list(NAIVE) + [m for m in models if m in preds]
+    preds = preds[order]
 
     table = metrics(preds, f)
     RESULTS.mkdir(exist_ok=True)
     PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
     table.round(3).to_csv(RESULTS / f"metrics_{args.period}.csv")
-    preds.to_parquet(PREDICTIONS_DIR / f"predictions_{args.period}.parquet")
+    preds.to_parquet(path)
 
     with pd.option_context("display.width", 140, "display.float_format", "{:.2f}".format):
         print(f"\n=== {args.period} : {start} -> {end} ===")
