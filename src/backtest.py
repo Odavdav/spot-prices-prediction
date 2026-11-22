@@ -44,7 +44,8 @@ REFIT_FREQ = {"monthly": "MS", "weekly": "7D", "daily": "D"}
 REFIT_SUFFIX = {"weekly": "_hebdo", "daily": "_quotidien"}
 # Variantes LightGBM à réentraînement plus fréquent que mensuel : nom -> (marche, rythme)
 REFIT_VARIANTS = {"B1_hebdo": ("B1", "weekly"), "B2_hebdo": ("B2", "weekly"),
-                  "B2_quotidien": ("B2", "daily")}
+                  "B2_quotidien": ("B2", "daily"), "B2_rl_hebdo": ("B2_rl", "weekly"),
+                  "B2_brut_hebdo": ("B2_brut", "weekly")}
 
 
 def refit_dates(start: str, end: str, refit: str = "monthly") -> list:
@@ -81,6 +82,12 @@ DM_PAIRS = [
     ("B2_hebdo", "LEAR_quotidien"), # meilleur LightGBM vs meilleur LEAR (ajoutée après les runs hebdo)
     ("B2_quotidien", "B2_hebdo"),   # le réentraînement quotidien apporte-t-il encore ? (fixée avant le run)
     ("B2_quotidien", "LEAR_quotidien"),  # même rythme que le LEAR de l'article (fixée avant le run)
+    ("B2_rl_hebdo", "B2_hebdo"),    # normalisation pondérée par la charge résiduelle vs pleine
+    ("B2_rl_hebdo", "B2_brut_hebdo"),  # ... vs aucune normalisation
+    ("B2_rl", "B2"),                # idem au rythme mensuel (période de crise)
+    ("B2_rl", "B2_brut"),
+    ("Chronos2_fond", "Chronos2_prix"),  # les fondamentaux aident-ils un modèle de fondation ?
+    ("B2_hebdo", "Chronos2_fond"),       # LightGBM vs modèle de fondation, mêmes informations
     ("LEAR_quotidien", "LEAR_mensuel"),
     ("B2", "MSTL"),
 ]

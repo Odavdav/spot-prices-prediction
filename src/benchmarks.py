@@ -154,7 +154,63 @@ def lear_forecasts(f: pd.DataFrame, start: str, end: str, refit: str = "daily") 
     return hourly.loc[hourly.notna()].rename(name)
 
 
+# --------------------------------------------------------------------- Chronos-2
+# Modèle de fondation zero-shot (Amazon, rapport technique arXiv 2510.15821 du 17/10/2025).
+# Sorti avant le début du test (01/11/2025) : il ne peut pas avoir vu le test. Il a pu voir la
+# validation (nov. 2024 -> oct. 2025) : ses résultats de validation sont indicatifs seulement.
+CHRONOS_MODEL = "amazon/chronos-2"
+CHRONOS_CONTEXT = 2048     # heures d'historique (~12 semaines)
+# Variables connues à l'avance pour J (passées et futures), comme dans la marche B2
+CHRONOS_KNOWN = ["fr_load_fc", "fr_wind_fc", "fr_solar_fc", "de_load_fc", "de_wind_fc",
+                 "de_solar_fc", "srmc_ccgt", "is_holiday"]
+CHRONOS_PAST_ONLY = ["de_price_da"]   # connu jusqu'à J-1 seulement
+
+_chronos_pipeline = None
+
+
+def _chronos():
+    global _chronos_pipeline
+    if _chronos_pipeline is None:
+        from chronos import Chronos2Pipeline   # import tardif : PyTorch seulement si on s'en sert
+        _chronos_pipeline = Chronos2Pipeline.from_pretrained(CHRONOS_MODEL, device_map="cpu")
+    return _chronos_pipeline
+
+
+def chronos_forecasts(f: pd.DataFrame, start: str, end: str, covariates: bool) -> pd.Series:
+    """Médiane prédite par Chronos-2 pour chaque jour de [start, end), à partir des
+    CHRONOS_CONTEXT dernières heures connues à la fin de J-1 (et des variables connues pour J)."""
+    name = "Chronos2_fond" if covariates else "Chronos2_prix"
+    local = f["time_local"].dt.tz_convert(TZ)
+    cols = CHRONOS_KNOWN + CHRONOS_PAST_ONLY
+    cov = f[cols].interpolate(limit_direction="both").astype(float) if covariates else None
+    price = f["price_da"].to_numpy()
+    tasks, targets = [], []
+    for d in _period_days(start, end):
+        day_start = pd.Timestamp(d, tz=TZ)
+        hist = np.flatnonzero((local < day_start).to_numpy())[-CHRONOS_CONTEXT:]
+        horizon = np.flatnonzero(((local >= day_start) & (local < day_start + pd.Timedelta(days=1))).to_numpy())
+        task = {"target": price[hist]}
+        if covariates:
+            task["past_covariates"] = {c: cov[c].to_numpy()[hist] for c in cols}
+            task["future_covariates"] = {c: cov[c].to_numpy()[horizon] for c in CHRONOS_KNOWN}
+        tasks.append(task)
+        targets.append(horizon)
+
+    out = pd.Series(np.nan, index=f.index)
+    t0 = time.time()
+    for length in sorted({len(h) for h in targets}):   # 23, 24 ou 25 h (changements d'heure)
+        idx = [i for i, h in enumerate(targets) if len(h) == length]
+        quantiles, _ = _chronos().predict_quantiles([tasks[i] for i in idx], prediction_length=length,
+                                                    quantile_levels=[0.5], batch_size=32)
+        for i, q in zip(idx, quantiles):
+            out.iloc[targets[i]] = q[0, :, 0].numpy()
+    print(f"  {name} : {len(tasks)} jours en {time.time() - t0:.0f} s")
+    return out.loc[out.notna()].rename(name)
+
+
 BENCHMARKS = {
+    "Chronos2_prix": lambda f, s, e: chronos_forecasts(f, s, e, covariates=False),
+    "Chronos2_fond": lambda f, s, e: chronos_forecasts(f, s, e, covariates=True),
     "MSTL": mstl_forecasts,
     "LEAR_mensuel": lambda f, s, e: lear_forecasts(f, s, e, refit="monthly"),
     "LEAR_hebdo": lambda f, s, e: lear_forecasts(f, s, e, refit="weekly"),

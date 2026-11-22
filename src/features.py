@@ -99,11 +99,23 @@ STEPS = {
 ALL_FEATURES = STEPS["B2"]
 # Variante de contrôle : mêmes features que B2, cible prix brut (mesure l'apport de la normalisation)
 STEPS["B2_brut"] = STEPS["B2"]
+# Variante : normalisation pondérée par la charge résiduelle (cible prix − w(RL) × SRMC)
+STEPS["B2_rl"] = STEPS["B2"]
 
-# Marches où la cible est prix − SRMC : les features en €/MWh sont alors exprimées en écart au SRMC
-NORMALIZED_STEPS = {"B2"}
+# Normalisation de la cible et des features en €/MWh, par marche :
+#   "full" : prix − SRMC ;  "rl" : prix − w(RL) × SRMC ;  absente : prix brut.
+NORMALIZATION = {"B2": "full", "B2_rl": "rl"}
+NORMALIZED_STEPS = set(NORMALIZATION)
 PRICE_LEVEL_FEATURES = ["price_d1", "price_d2", "price_d7", "price_d1_mean", "price_d1_min",
                         "price_d1_max", "de_price_d1", "de_price_d1_mean"]
+
+# Transmission du coût du gaz au prix français selon la charge résiduelle prévue (FR, MW) :
+# pente du prix sur le SRMC par décile de charge résiduelle, avec effets fixes heure et mois,
+# estimée sur les données d'avant la validation (oct. 2018 -> oct. 2024), donc sans fuite.
+# Lecture : sous ~35 GW, le gaz fixe rarement le prix mais pèse encore (0,7 : couplage avec
+# les voisins, valeur de l'eau) ; au-delà de ~40 GW, transmission d'environ 1,1-1.2.
+PASS_THROUGH_RL = [28261, 33174, 36055, 38614, 41098, 43760, 47089, 51881, 58135, 68107]
+PASS_THROUGH = [0.71, 0.86, 0.95, 1.04, 1.13, 1.20, 1.18, 1.05, 1.18, 1.47]
 
 # SRMC d'un CCGT, en €/MWh électrique
 CCGT_EFFICIENCY = 0.55   # rendement électrique
@@ -205,30 +217,47 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def gas_weight(df: pd.DataFrame) -> pd.Series:
+    """Poids w(RL) du SRMC : transmission estimée du coût du gaz, interpolée selon la charge
+    résiduelle prévue (constante au-delà des déciles extrêmes ; 1 si la prévision manque)."""
+    rl = df["fr_residual_fc"]
+    w = np.interp(rl.fillna(np.nanmedian(PASS_THROUGH_RL)), PASS_THROUGH_RL, PASS_THROUGH)
+    return pd.Series(np.where(rl.notna(), w, 1.0), index=df.index)
+
+
+def srmc_offset(df: pd.DataFrame, step: str) -> pd.Series:
+    """Montant retranché au prix (cible et features en €/MWh) selon la normalisation de la marche."""
+    mode = NORMALIZATION.get(step)
+    if mode == "full":
+        return df["srmc_ccgt"]
+    if mode == "rl":
+        return gas_weight(df) * df["srmc_ccgt"]
+    return pd.Series(0.0, index=df.index)
+
+
 def get_X(df: pd.DataFrame, step: str) -> pd.DataFrame:
     """Matrice de features d'une marche de l'ablation (DataFrame déjà passé par add_features).
 
-    Sur les marches normalisées, les features en €/MWh sont exprimées en écart au SRMC du jour,
-    comme la cible : sinon les entrées garderaient le problème de niveau que la cible n'a plus.
+    Sur les marches normalisées, les features en €/MWh sont exprimées en écart au même montant que
+    la cible : sinon les entrées garderaient le problème de niveau que la cible n'a plus.
     """
     X = df[STEPS[step]].copy()
     if step in NORMALIZED_STEPS:
+        offset = srmc_offset(df, step)
         for c in PRICE_LEVEL_FEATURES:
             if c in X:
-                X[c] = X[c] - df["srmc_ccgt"]
+                X[c] = X[c] - offset
     return X
 
 
 def get_y(df: pd.DataFrame, step: str) -> pd.Series:
-    """Cible : prix DA, ou prix − SRMC sur les marches normalisées."""
-    if step in NORMALIZED_STEPS:
-        return df["price_da"] - df["srmc_ccgt"]
-    return df["price_da"]
+    """Cible : prix DA, moins le SRMC (éventuellement pondéré) sur les marches normalisées."""
+    return df["price_da"] - srmc_offset(df, step)
 
 
 def to_price(pred: np.ndarray, df: pd.DataFrame, step: str) -> np.ndarray:
     """Repasse une prédiction de la cible en prix (€/MWh)."""
-    return pred + df["srmc_ccgt"].to_numpy() if step in NORMALIZED_STEPS else pred
+    return pred + srmc_offset(df, step).to_numpy()
 
 
 # --------------------------------------------------------------------- contrôle de fuite
