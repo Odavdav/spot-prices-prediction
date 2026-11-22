@@ -16,6 +16,10 @@ B2_hebdo_hl90_corr vs B2_hebdo_hl90,-1.1991,-4.3433,0.0,365.0,5.0
 B2_quotidien_corr vs B2_quotidien,-1.1572,-4.5575,0.0,365.0,5.0
 B2_quotidien_corr vs Chronos2_fond,1.681,4.2321,0.0,365.0,5.0
 B2_hebdo_hl90_corr vs Chronos2_fond,1.6409,3.7306,0.0002,365.0,5.0
+B3_hebdo vs B2_hebdo,-0.6881,-2.9572,0.0031,365.0,5.0
+B3_hebdo_hl90_corr vs B2_hebdo_hl90_corr,-0.1439,-1.1162,0.2644,365.0,5.0
+B3_hebdo_corr vs Chronos2_fond,1.6286,4.4185,0.0,365.0,5.0
+B3_hebdo_hl90_corr vs Chronos2_fond,1.4977,3.4313,0.0006,365.0,5.0
 Chronos2_fond vs Chronos2_prix,-5.377,-7.8768,0.0,365.0,5.0
 B2_hebdo vs Chronos2_fond,3.6157,6.1751,0.0,365.0,5.0
 LEAR_quotidien vs LEAR_mensuel,-8.426,-1.6169,0.1059,365.0,5.0
