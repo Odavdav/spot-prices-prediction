@@ -129,22 +129,26 @@ def _lear_fit_predict(X, dummies, price, fit_day, predict_days):
     return pd.DataFrame(np.mean(preds, axis=0), index=predict_days, columns=range(24))
 
 
+LEAR_NAMES = {"daily": "LEAR_quotidien", "weekly": "LEAR_hebdo", "monthly": "LEAR_mensuel"}
+
+
 def lear_forecasts(f: pd.DataFrame, start: str, end: str, refit: str = "daily") -> pd.Series:
-    """Prévisions LEAR sur [start, end), réestimées chaque jour ("daily") ou chaque mois ("monthly")."""
+    """Prévisions LEAR sur [start, end), réestimées chaque jour, semaine (7 j) ou mois."""
     X, dummies, price, day, hour = _lear_design(f)
     days = _period_days(start, end)
     t0 = time.time()
     if refit == "daily":
         groups = [(d, pd.DatetimeIndex([d])) for d in days]
     else:
-        groups = [(m, days[(days >= m) & (days < m + pd.offsets.MonthBegin(1))])
-                  for m in pd.date_range(start, end, freq="MS", inclusive="left")]
+        freq = "7D" if refit == "weekly" else "MS"
+        starts = list(pd.date_range(start, end, freq=freq, inclusive="left")) + [pd.Timestamp(end)]
+        groups = [(a, days[(days >= a) & (days < b)]) for a, b in zip(starts[:-1], starts[1:])]
     panels = []
     for i, (fit_day, predict_days) in enumerate(groups, 1):
         panels.append(_lear_fit_predict(X, dummies, price, fit_day, predict_days))
         if refit == "daily" and i % 30 == 0:
             print(f"  LEAR quotidien : {i}/{len(groups)} jours ({time.time() - t0:.0f} s)")
-    name = "LEAR_quotidien" if refit == "daily" else "LEAR_mensuel"
+    name = LEAR_NAMES[refit]
     print(f"  {name} : {len(groups)} réestimations en {time.time() - t0:.0f} s")
     hourly = pd.Series(_to_hourly(pd.concat(panels), day, hour), index=f.index)
     return hourly.loc[hourly.notna()].rename(name)
@@ -153,5 +157,6 @@ def lear_forecasts(f: pd.DataFrame, start: str, end: str, refit: str = "daily") 
 BENCHMARKS = {
     "MSTL": mstl_forecasts,
     "LEAR_mensuel": lambda f, s, e: lear_forecasts(f, s, e, refit="monthly"),
+    "LEAR_hebdo": lambda f, s, e: lear_forecasts(f, s, e, refit="weekly"),
     "LEAR_quotidien": lambda f, s, e: lear_forecasts(f, s, e, refit="daily"),
 }

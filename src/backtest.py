@@ -40,24 +40,84 @@ EVENING_PEAK = range(18, 22)  # 18h-21h59, heure locale
 
 
 # --------------------------------------------------------------------- walk-forward
-def month_starts(start: str, end: str) -> list:
-    return list(pd.date_range(start, end, freq="MS", tz=TZ, inclusive="left"))
+REFIT_FREQ = {"monthly": "MS", "weekly": "7D"}
+WEEKLY_SUFFIX = "_hebdo"
+WEEKLY_STEPS = ["B1", "B2"]   # marches aussi testées avec réentraînement hebdomadaire
 
 
-def walk_forward(f: pd.DataFrame, step: str, start: str, end: str) -> pd.Series:
-    """Prévisions (en €/MWh) de la marche `step` sur [start, end), réentraînement mensuel."""
+def refit_dates(start: str, end: str, refit: str = "monthly") -> list:
+    """Dates de réentraînement : le 1er de chaque mois, ou tous les 7 jours à partir de `start`."""
+    return list(pd.date_range(start, end, freq=REFIT_FREQ[refit], tz=TZ, inclusive="left"))
+
+
+def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = "monthly") -> pd.Series:
+    """Prévisions (en €/MWh) de la marche `step` sur [start, end), réentraînement mensuel ou hebdomadaire."""
     y = get_y(f, step)
     X = get_X(f, step)
+    dates = refit_dates(start, end, refit) + [pd.Timestamp(end, tz=TZ)]
     preds = []
-    for m in month_starts(start, end):
-        m_end = m + pd.offsets.MonthBegin(1)
+    for m, m_end in zip(dates[:-1], dates[1:]):
         train = (f["time_local"] < m) & y.notna()
         pred = (f["time_local"] >= m) & (f["time_local"] < m_end)
         model = lgb.LGBMRegressor(**LGB_PARAMS).fit(X[train], y[train])
         p = to_price(model.predict(X[pred]), f[pred], step)
         preds.append(pd.Series(p, index=f.index[pred]))
-        print(f"  {step} {m:%Y-%m}  train={train.sum():6d}  pred={pred.sum():4d}")
-    return pd.concat(preds).rename(step)
+        print(f"  {step} ({refit}) {m:%Y-%m-%d}  train={train.sum():6d}  pred={pred.sum():4d}")
+    name = step + (WEEKLY_SUFFIX if refit == "weekly" else "")
+    return pd.concat(preds).rename(name)
+
+
+# --------------------------------------------------------------------- test de Diebold-Mariano
+# Paires comparées (A, B) : choisies à l'avance pour limiter les tests multiples.
+DM_PAIRS = [
+    ("B2", "naive_d7"),             # le modèle complet bat-il la référence ?
+    ("B2", "B2_brut"),              # la normalisation par le SRMC change-t-elle quelque chose ?
+    ("B2", "LEAR_quotidien"),       # meilleur LightGBM vs référence de la littérature
+    ("B1", "LEAR_quotidien"),       # à information égale
+    ("B1_hebdo", "LEAR_hebdo"),     # à information égale et même rythme de réentraînement
+    ("B2_hebdo", "B2"),             # réentraîner chaque semaine plutôt que chaque mois
+    ("B2_hebdo", "LEAR_quotidien"), # meilleur LightGBM vs meilleur LEAR (ajoutée après les runs hebdo)
+    ("LEAR_quotidien", "LEAR_mensuel"),
+    ("B2", "MSTL"),
+]
+
+
+def diebold_mariano(err_a: pd.Series, err_b: pd.Series, day: pd.Series) -> dict:
+    """Test de Diebold-Mariano sur la perte absolue, à variance HAC (Newey-West).
+
+    Comme Lago et al. (2021), on moyenne d'abord le différentiel de perte par jour (les 24 heures d'un
+    jour sont fortement corrélées), puis on corrige l'autocorrélation entre jours par Newey-West.
+    t < 0 : A a une erreur plus faible que B.
+    """
+    d = (err_a.abs() - err_b.abs()).groupby(day.to_numpy()).mean().dropna().to_numpy()
+    T = len(d)
+    lags = int(np.floor(4 * (T / 100) ** (2 / 9)))      # règle usuelle de Newey-West
+    u = d - d.mean()
+    lrv = u @ u / T
+    for k in range(1, lags + 1):
+        lrv += 2 * (1 - k / (lags + 1)) * (u[k:] @ u[:-k]) / T
+    if lrv <= 0:   # différentiel constant (ex. deux prévisions identiques)
+        return {"ecart_MAE": d.mean(), "t_HAC": np.nan, "p_value": np.nan, "jours": T, "lags_NW": lags}
+    t = d.mean() / np.sqrt(lrv / T)
+    p = 2 * (1 - _normal_cdf(abs(t)))
+    return {"ecart_MAE": d.mean(), "t_HAC": t, "p_value": p, "jours": T, "lags_NW": lags}
+
+
+def _normal_cdf(x: float) -> float:
+    from math import erf, sqrt
+    return 0.5 * (1 + erf(x / sqrt(2)))
+
+
+def dm_table(preds: pd.DataFrame, f: pd.DataFrame) -> pd.DataFrame:
+    rows = f.loc[preds.index]
+    day = rows["time_local"].dt.strftime("%Y-%m-%d")
+    out = {}
+    for a, b in DM_PAIRS:
+        if a in preds and b in preds:
+            ok = preds[[a, b]].notna().all(axis=1) & rows["price_da"].notna()
+            err = preds.loc[ok, [a, b]].sub(rows.loc[ok, "price_da"], axis=0)
+            out[f"{a} vs {b}"] = diebold_mariano(err[a], err[b], day[ok])
+    return pd.DataFrame(out).T
 
 
 # --------------------------------------------------------------------- métriques
@@ -91,11 +151,12 @@ def metrics(preds: pd.DataFrame, f: pd.DataFrame) -> pd.DataFrame:
 
 # --------------------------------------------------------------------- main
 def main():
-    models = list(STEPS) + list(BENCHMARKS)
+    models = list(STEPS) + [s + WEEKLY_SUFFIX for s in WEEKLY_STEPS] + list(BENCHMARKS)
     ap = argparse.ArgumentParser()
     ap.add_argument("--period", choices=list(PERIODS), default="validation")
-    ap.add_argument("--models", nargs="+", choices=models, default=models,
-                    help="modèles à (re)calculer ; les autres sont relus dans les prédictions déjà sauvées")
+    ap.add_argument("--models", nargs="*", choices=models, default=models,
+                    help="modèles à (re)calculer ; les autres sont relus dans les prédictions déjà sauvées "
+                         "(--models sans argument : recalcule seulement les tableaux)")
     args = ap.parse_args()
     if args.period == "test":
         print("ATTENTION : période de test. À ne lancer qu'une fois les choix figés sur la validation.")
@@ -108,11 +169,15 @@ def main():
     preds = pd.read_parquet(path) if path.exists() else pd.DataFrame(index=f.index[in_period])
     for name, col in NAIVE.items():
         preds[name] = f.loc[preds.index, col]
+    PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
     for name in args.models:
-        if name in STEPS:
-            preds[name] = walk_forward(f, name, start, end)
-        else:
+        if name in BENCHMARKS:
             preds[name] = BENCHMARKS[name](f, start, end)
+        elif name in STEPS:
+            preds[name] = walk_forward(f, name, start, end)
+        else:   # marche LightGBM réentraînée chaque semaine, ex. "B2_hebdo"
+            preds[name] = walk_forward(f, name.removesuffix(WEEKLY_SUFFIX), start, end, refit="weekly")
+        preds.to_parquet(path)   # sauvegarde après chaque modèle : un plantage ne perd pas le travail fait
     order = list(NAIVE) + [m for m in models if m in preds]
     preds = preds[order]
 
@@ -120,12 +185,16 @@ def main():
     RESULTS.mkdir(exist_ok=True)
     PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
     table.round(3).to_csv(RESULTS / f"metrics_{args.period}.csv")
+    dm = dm_table(preds, f)
+    dm.round(4).to_csv(RESULTS / f"diebold_mariano_{args.period}.csv")
     preds.to_parquet(path)
 
     with pd.option_context("display.width", 140, "display.float_format", "{:.2f}".format):
         print(f"\n=== {args.period} : {start} -> {end} ===")
         print(table.drop(columns="heures", level=1))
         print("heures par régime :", table.xs("heures", axis=1, level=1).iloc[0].astype(int).to_dict())
+        print("\nDiebold-Mariano (perte absolue, moyenne journalière, HAC Newey-West) :")
+        print(dm)
 
 
 if __name__ == "__main__":
