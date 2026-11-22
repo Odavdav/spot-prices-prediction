@@ -22,14 +22,17 @@ FIG = RESULTS / "figures"
 
 # Palette (instance de référence, mode clair)
 SURFACE, INK, INK_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
-BLUE, ORANGE, AQUA, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#b9b8b2"
-MODEL_COLORS = {"B2_quotidien": BLUE, "Chronos2_fond": ORANGE, "LEAR_quotidien": AQUA}
+BLUE, ORANGE, AQUA, YELLOW, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#b9b8b2"
+MODEL_COLORS = {"B2_quotidien": BLUE, "Chronos2_fond": ORANGE, "LEAR_quotidien": AQUA,
+                "B3_hebdo_hl90_corr": YELLOW}
 
 LABELS = {
     "naive_d7": "Naive D-7", "naive_d1": "Naive D-1", "A1": "A1 calendar", "A2": "A2 + price lags",
     "B1": "B1 + FR fundamentals", "B2": "B2 + gas, CO2, DE", "B2_quotidien": "B2, daily retraining",
     "B2_hebdo": "B2, weekly retraining", "MSTL": "MSTL", "LEAR_quotidien": "LEAR (daily)",
     "Chronos2_prix": "Chronos-2, prices only", "Chronos2_fond": "Chronos-2 + fundamentals",
+    "B2_quotidien_corr": "B2 daily + error correction*",
+    "B3_hebdo_hl90_corr": "B3 + recency + correction*",
 }
 
 plt.rcParams.update({
@@ -72,14 +75,14 @@ def fig_merit_order(f):
 # --------------------------------------------------------------------- 2. résultats du test
 def fig_results(f, preds):
     models = ["naive_d7", "MSTL", "LEAR_quotidien", "Chronos2_prix", "A2", "B1", "B2",
-              "B2_hebdo", "B2_quotidien", "Chronos2_fond"]
+              "B2_hebdo", "B2_quotidien", "B2_quotidien_corr", "B3_hebdo_hl90_corr", "Chronos2_fond"]
     rows = f.loc[preds.index]
     ok = preds[models].notna().all(axis=1) & rows["price_da"].notna()
     err = preds.loc[ok, models].sub(rows.loc[ok, "price_da"], axis=0).abs()
     reg = regime(rows[ok])
     panels = [("All hours", slice(None)), ("Negative-price hours", reg == "negatif"),
               ("Evening peak (18-22h)", reg == "pointe_soir"), ("Other hours", reg == "reste")]
-    fig, axes = plt.subplots(1, 4, figsize=(13, 4.4), sharey=True)
+    fig, axes = plt.subplots(1, 4, figsize=(13, 4.9), sharey=True)
     for ax, (title, m) in zip(axes, panels):
         mae = err[m].mean()
         colors = [MODEL_COLORS.get(mo, GRAY) for mo in models]
@@ -91,7 +94,8 @@ def fig_results(f, preds):
         ax.grid(axis="y", visible=False)
         ax.set_xlim(0, mae.max() * 1.22)
     axes[0].set_yticks(range(len(models)), [LABELS[m] for m in models])
-    fig.suptitle("Test period (Nov. 2025 – Oct. 2026): forecast error by model and regime",
+    fig.suptitle("Test period (Nov. 2025 – Oct. 2026): forecast error by model and regime"
+                 "  (* post-test extension, chosen on validation)",
                  x=0.01, ha="left", fontweight="bold")
     fig.tight_layout()
     _save(fig, "02_test_results.png")

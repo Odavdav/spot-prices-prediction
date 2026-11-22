@@ -15,6 +15,9 @@ reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
   cuts the error by 2.5 €/MWh.
 - **A zero-shot foundation model given the same fundamentals does better still** (Chronos-2:
   14.4 €/MWh, p < 0.001), except on negative-price hours, where the two are level.
+- **Post-test extension:** borrowing Chronos-2's ingredients brings LightGBM down to **15.9 €/MWh**. Those
+  ingredients are recent-error correction, recency weights, and day-shape and regime features. That halves
+  the gap, but Chronos-2 stays significantly ahead (p = 0.001).
 
 ![Test results](results/figures/02_test_results.png)
 
@@ -26,11 +29,12 @@ reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
 2. [Data and information set](#data-and-information-set)
 3. [Method](#method)
 4. [Results](#results)
-5. [What drives the forecasts](#what-drives-the-forecasts)
-6. [Market takeaways](#market-takeaways)
-7. [Limitations](#limitations)
-8. [Reproducing the results](#reproducing-the-results)
-9. [Acknowledgements](#acknowledgements)
+5. [Post-test extension: borrowing from Chronos-2](#post-test-extension-borrowing-from-chronos-2)
+6. [What drives the forecasts](#what-drives-the-forecasts)
+7. [Market takeaways](#market-takeaways)
+8. [Limitations](#limitations)
+9. [Reproducing the results](#reproducing-the-results)
+10. [Acknowledgements](#acknowledgements)
 
 ---
 
@@ -145,6 +149,45 @@ That illustrates why its edge disappears on negative-price hours.
 
 ![Test week](results/figures/04_test_week.png)
 
+## Post-test extension: borrowing from Chronos-2
+
+After seeing Chronos-2 win on the test year, we tried to give LightGBM the ingredients that probably
+explain its edge.
+
+**How this was done:**
+- Each idea was developed and **chosen on the validation year only**, then run once on the test year.
+- The comparisons were fixed in advance.
+- Because the idea itself came from a test result, this section is reported separately from the main results.
+
+**The three ideas:**
+
+| Chronos-2 behaviour | LightGBM counterpart |
+|---|---|
+| Re-learns from the last weeks at every forecast | **Recency weights:** a training row's weight halves every 90 days (half-life chosen among 90, 180 and 365 days on validation). |
+| Corrects itself quickly | **Recent-error correction:** a second-stage median regression predicts today's error from yesterday's error and the last 7 days' errors. Yesterday's error is known at 12:00 on D-1, since D-1 prices are published on D-2. Tested for leakage. |
+| Sees the whole day and the current regime | **Step B3 = B2 +** the shape of day D (residual-load minimum, maximum, mean and trough hour; each hour's position in the day; solar peak) **+** regime features (price − SRMC gap, volatility and negative-hour share over 14 days; price sensitivity to residual load over 28 days). |
+
+**Results (MAE in €/MWh; weekly retraining unless stated):**
+
+| Model | Validation | Test | Test, negative hours |
+|---|---|---|---|
+| B2, daily retraining (main model) | 13.47 | 17.26 | 18.2 |
+| B2, daily + error correction | n/a | 16.10 | **18.0** |
+| B3 + error correction | 13.35 | 16.05 | 18.2 |
+| **B3 + recency weights + error correction** (chosen on validation) | **12.45** | **15.92** | 22.7 |
+| Chronos-2 + fundamentals | n/a | **14.42** | 19.6 |
+
+**What held up on the test year:**
+- **Error correction is the robust idea.** It cuts B2 daily's error by 1.16 €/MWh (p < 0.001) without hurting negative-price hours.
+- **Day-shape and regime features help:** B3 beats B2 by 0.69 €/MWh at the same retraining pace (p = 0.003), mostly at the evening peak.
+
+**What did not hold up:**
+- **Recency weights backfired on negative-price hours** (22.7 against 18.2 €/MWh). A 90-day half-life makes the model forget earlier springs, which is precisely when negative prices happen. They looked harmless on validation.
+- **The model chosen on validation** (15.92) beats the main model by 1.3 €/MWh, but is no better than the same model without the B3 features (p = 0.26).
+- **Chronos-2 stays ahead by 1.5 €/MWh** (p = 0.001).
+
+**The lesson:** adapting fast to recent data helps ordinary hours but is risky for rare, seasonal events. A foundation model that has seen many regimes handles that trade-off better than a single-market model.
+
 ## What drives the forecasts
 
 The SHAP values below are for B2, trained on all data before the test and explained on the test hours
@@ -173,6 +216,7 @@ The merit-order picture behind these results:
 3. **Model freshness is a first-order choice.** Retraining daily instead of monthly is worth 2.5 €/MWh on the test year and costs about 8 seconds a day in production.
 4. **Linear models are competitive in normal hours; non-linearity earns its keep around renewables thresholds.** With the same information and cadence, LightGBM beats LEAR on the test (p = 0.01). Its edge is largest on negative-price hours (19.6 vs 24.7 €/MWh), while LEAR is as good or better at the evening peak.
 5. **In-context foundation models are a serious contender.** Fed the same fundamentals, a zero-shot model beat a tuned gradient-boosting model by 16 %. It adapts to the latest weeks of data at every forecast, but it can overshoot extreme renewables hours.
+6. **Correcting yesterday's bias is the cheapest win; forgetting the past is the riskiest.** A recent-error correction is worth 1.2 €/MWh. Down-weighting old data helps ordinary hours, but it erases the seasonal memory needed for negative prices.
 
 ## Limitations
 
@@ -188,6 +232,7 @@ The merit-order picture behind these results:
   - It could not be checked on the validation year.
   - The B2 daily vs Chronos-2 comparison was not fixed in advance.
 - **One test year and fixed hyperparameters.** No tuning was done. The negative-hour statistics rest on 513 (validation) and 565 (test) hours.
+- **The post-test extension was motivated by a test result.** Each idea was developed and chosen on validation, but the test year has now been used more than once, so its test figures are less clean than the main results.
 - The gas pass-through weights w(RL) are estimated before the validation year and **drift over time** (0.26 at low residual load in 2024 against 0.5–0.8 before).
 
 ## Reproducing the results
@@ -201,6 +246,8 @@ python -m pytest                         # leakage tests
 python -m src.backtest                   # validation year
 python -m src.backtest --period crise    # 2021-2022 gas crisis
 python -m src.backtest --period test     # test year, run once (about 3 to 4 hours on a laptop CPU)
+python -m src.backtest --period rodage --models B3_hebdo_hl90   # error history before validation
+python -m src.correction --base B3_hebdo_hl90 --period validation --history rodage
 python -m src.importance                 # SHAP importance
 python -m src.figures                    # figures
 python -m src.report                     # report.pdf
@@ -212,6 +259,7 @@ src/
   features.py     features, ablation steps, publication register
   backtest.py     walk-forward, metrics, Diebold-Mariano
   benchmarks.py   MSTL, LEAR, Chronos-2
+  correction.py   recent-error correction (second stage)
   importance.py   SHAP feature importance
   figures.py      figures
   report.py       PDF report

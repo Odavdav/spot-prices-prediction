@@ -58,7 +58,32 @@ NAMES = {
     "B2_brut_hebdo": "B2 raw target, weekly", "MSTL": "MSTL", "LEAR_mensuel": "LEAR, monthly",
     "LEAR_hebdo": "LEAR, weekly", "LEAR_quotidien": "LEAR, daily",
     "Chronos2_prix": "Chronos-2, prices only", "Chronos2_fond": "Chronos-2 + fundamentals",
+    # Extension post-test
+    "B2_hebdo_hl90": "B2 weekly + recency (90 d)", "B2_hebdo_hl180": "B2 weekly + recency (180 d)",
+    "B2_hebdo_hl365": "B2 weekly + recency (365 d)", "B2_hebdo_corr": "B2 weekly + error correction",
+    "B2_hebdo_hl90_corr": "B2 weekly + recency + correction",
+    "B2_quotidien_corr": "B2 daily + error correction", "B3_hebdo": "B3 weekly (day shape, regime)",
+    "B3_hebdo_hl90": "B3 weekly + recency", "B3_hebdo_corr": "B3 weekly + error correction",
+    "B3_hebdo_hl90_corr": "B3 weekly + recency + correction",
 }
+EXTENSION = ["B2_quotidien", "B2_quotidien_corr", "B2_hebdo", "B2_hebdo_corr", "B2_hebdo_hl90",
+             "B2_hebdo_hl90_corr", "B3_hebdo", "B3_hebdo_corr", "B3_hebdo_hl90", "B3_hebdo_hl90_corr",
+             "Chronos2_fond"]
+
+
+def extension_table():
+    """Validation et test côte à côte pour les variantes de l'extension post-test."""
+    v = pd.read_csv(RESULTS / "metrics_validation.csv", header=[0, 1], index_col=0)
+    t = pd.read_csv(RESULTS / "metrics_test.csv", header=[0, 1], index_col=0)
+    fmt = lambda m, name, reg: f"{m.loc[name, (reg, 'MAE')]:.2f}" if name in m.index else "n/a"
+    rows = [["Model", "Valid. MAE", "Valid. negative", "Test MAE", "Test negative", "Test evening peak"]]
+    hl = []
+    for name in EXTENSION:
+        rows.append([NAMES[name], fmt(v, name, "toutes"), fmt(v, name, "negatif"), fmt(t, name, "toutes"),
+                     fmt(t, name, "negatif"), fmt(t, name, "pointe_soir")])
+        if name in ("B3_hebdo_hl90_corr", "B2_quotidien_corr"):
+            hl.append(len(rows) - 1)
+    return table(rows, [5.6 * cm] + [2.2 * cm] * 5, highlight=hl)
 
 
 def P(text, style="body"):
@@ -150,6 +175,9 @@ def build():
         "Normalising the target by the SRMC is insurance: no effect in calm years, −17 % error in the 2021–2022 gas crisis.",
         "Chronos-2, zero-shot but given the same fundamentals, does better still (14.4 €/MWh, p < 0.001), "
         "except on negative-price hours, where the two models are level.",
+        "A post-test extension borrowing Chronos-2's ingredients (recent-error correction, recency weights, "
+        "day-shape and regime features) brings LightGBM to 15.9 €/MWh, halving the gap; Chronos-2 stays ahead "
+        "(p = 0.001).",
     ])
 
     # ---------------------------------------------------------------- données
@@ -231,6 +259,39 @@ def build():
                 "slightly optimistic.", "caption")]
     story += [figure("04_test_week.png", 16, "Figure 3. One test week: actual price and three forecasts.")]
 
+    # ---------------------------------------------------------------- extension post-test
+    story += [P("3.5 Post-test extension: borrowing from Chronos-2", "h2"), P(
+        "After seeing Chronos-2 win on the test year, we tried to give LightGBM the ingredients that probably "
+        "explain its edge. Each idea was developed and chosen on the validation year, then run once on the test "
+        "year with comparison pairs fixed in advance. Because the idea came from a test result, the extension is "
+        "reported separately and its test figures are less clean than the main results.")]
+    story += bullets([
+        "<b>Recency weights:</b> a training row's weight halves every H days (H = 90, 180, 365; 90 chosen on "
+        "validation), mimicking Chronos-2's focus on recent context.",
+        "<b>Recent-error correction:</b> a second-stage median regression, re-estimated weekly, predicts today's "
+        "error from yesterday's error (same hour and daily mean) and the last 7 days' errors. Yesterday's error is "
+        "known at 12:00 on D-1. A dedicated leakage test checks that the correction for day D does not change when "
+        "prices from D onward are altered. The error history before validation comes from a burn-in year "
+        "(Nov. 2023 – Oct. 2024).",
+        "<b>Step B3 = B2 + day shape + regime:</b> residual-load minimum, maximum, mean and trough hour for day D, "
+        "each hour's position and rank in the day, solar peak, German daily residual load, shape of yesterday's "
+        "price curve; and, over strictly earlier days, the price − SRMC gap, volatility and negative-hour share "
+        "over 14 days and the price sensitivity to residual load over 28 days.",
+    ])
+    story += [extension_table(), P(
+        "MAE in €/MWh. Weekly retraining unless stated. Highlighted: the variant chosen on validation, and the "
+        "most balanced variant. n/a: not run on that period.", "caption")]
+    story += bullets([
+        "<b>Error correction is the robust idea:</b> −1.16 €/MWh on B2 daily on the test year (p < 0.001), with "
+        "negative-price hours unchanged.",
+        "<b>B3 features help on the test</b> at equal retraining pace (−0.69 €/MWh vs B2 weekly, p = 0.003), mostly "
+        "at the evening peak; on validation they mainly improved negative-price hours.",
+        "<b>Recency weights backfired</b> on negative-price hours in the test year (about 23 against 18 €/MWh): a "
+        "90-day half-life forgets earlier springs, when negative prices occur. This was not visible on validation.",
+        "The variant chosen on validation (B3 + recency + correction) reaches 15.92 €/MWh on the test year, "
+        "1.3 €/MWh better than the main model, but <b>Chronos-2 remains ahead by 1.5 €/MWh</b> (p = 0.001).",
+    ])
+
     # ---------------------------------------------------------------- importance
     story += [P("4. Feature importance", "h1"), P(
         "SHAP values (TreeSHAP) for B2, trained on all data before the test and explained on the test hours. "
@@ -275,6 +336,8 @@ def build():
         "Chronos-2's training data is not published; contamination of the test is ruled out by its release "
         "date only, and the model could not be checked on validation.",
         "A single test year, fixed hyperparameters, and some comparisons chosen after seeing the results.",
+        "The post-test extension was motivated by a test result; the test year has therefore been used more "
+        "than once overall.",
         "The gas pass-through weights w(RL) drift over time (0.26 at low residual load in 2024, against "
         "0.5–0.8 before).",
     ])
