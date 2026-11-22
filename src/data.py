@@ -1,21 +1,17 @@
-"""Chargement du jeu figé. Les contrôles (fuseaux, trous, doublons) pourront être ajoutés ici."""
+"""Chargement du jeu horaire construit par get_data.py."""
 import pandas as pd
 
-from src.config import DATASET_PATH, GROUP, TARGET, TZ
+from src.config import DATASET_PATH, TZ
 
 
 def load_dataset(path=DATASET_PATH) -> pd.DataFrame:
-    """Lit le Parquet, retire les heures sans prix ni cible, recalcule l'heure et le jour locaux.
+    """Lit le Parquet horaire (index UTC) et garantit une colonne `time_local` en heure de Paris.
 
-    Les NaN des prévisions (solaire, éolien FR) sont conservés : ils sont imputés dans le Pipeline.
+    Les heures sans prix sont conservées : elles servent au calcul des lags et sont écartées
+    seulement au moment d'entraîner ou d'évaluer.
     """
-    df = pd.read_parquet(path)
-    df = df.dropna(subset=["price_da", TARGET]).copy()
-    df[TARGET] = df[TARGET].astype(int)
-
-    if "time_local" not in df.columns:
-        df["time_local"] = df.index.tz_convert(TZ)
-    df["time_local"] = df["time_local"].dt.tz_convert(TZ)
-    # Jour local en texte (AAAA-MM-JJ) : clé de groupe, lisible dans splits.json
-    df[GROUP] = df["time_local"].dt.strftime("%Y-%m-%d")
-    return df.sort_values("time_local")
+    df = pd.read_parquet(path).sort_index()
+    if not df.index.is_unique:
+        raise ValueError("Index horaire dupliqué : reconstruire le jeu avec get_data.py.")
+    df["time_local"] = df.index.tz_convert(TZ)
+    return df

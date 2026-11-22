@@ -97,6 +97,8 @@ STEPS = {
     "B2": CALENDAR + PRICE_LAGS + FUNDAMENTALS + FUELS_NEIGHBOURS,
 }
 ALL_FEATURES = STEPS["B2"]
+# Variante de contrôle : mêmes features que B2, cible prix brut (mesure l'apport de la normalisation)
+STEPS["B2_brut"] = STEPS["B2"]
 
 # Marches où la cible est prix − SRMC : les features en €/MWh sont alors exprimées en écart au SRMC
 NORMALIZED_STEPS = {"B2"}

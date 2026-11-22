@@ -1,18 +1,20 @@
-"""Constantes partagées par tout le projet : chemins, dates de coupure, graine."""
+"""Constantes partagées par tout le projet : chemins, périodes d'évaluation, graine."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_PROCESSED = ROOT / "data" / "processed"
 DATASET_PATH = DATA_PROCESSED / "dataset_hourly.parquet"
-SPLITS_PATH = DATA_PROCESSED / "splits.json"
-FIGURES = ROOT / "reports" / "figures"
+PREDICTIONS_DIR = DATA_PROCESSED / "predictions"   # non versionné
+RESULTS = ROOT / "results"                          # métriques CSV et figures, versionnés
 
 TZ = "Europe/Paris"
-# Passage du day-ahead au quart d'heure : tout ce qui suit sert de test hors échantillon.
-OOS_START = "2025-10-01"
+
+# Périodes (dates de livraison, heure de Paris, borne de fin exclue).
+# Le test est entièrement après le passage du DA au pas de 15 min (01/10/2025) et n'est touché
+# qu'à la fin ; la validation sert à régler les choix de modélisation.
+PERIODS = {
+    "validation": ("2024-11-01", "2025-11-01"),
+    "test": ("2025-11-01", "2026-11-01"),
+}
 
 SEED = 42
-N_SPLITS = 5
-
-TARGET = "target"
-GROUP = "date_local"  # un groupe = un jour local, pour ne jamais couper une journée
