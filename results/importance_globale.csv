@@ -1,0 +1,15 @@
+,mean_abs_shap
+FR price D-1 (same hour),16.402
+FR residual load,9.608
+DE residual load / load,8.044
+"FR price D-2, D-7",6.68
+FR renewables share,5.311
+"FR price D-1 (mean, min, max)",5.061
+"Calendar (day, month, holidays)",4.263
+"CCGT SRMC (gas, CO2)",3.965
+FR wind,2.93
+Hour,1.651
+DE price D-1,1.497
+FR load,1.256
+DE wind + solar,0.773
+FR solar,0.627
