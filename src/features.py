@@ -72,6 +72,21 @@ FEATURE_REGISTRY = {
     "de_load_fc": (["de_load_fc"], 0),
     "de_vre_fc": (["de_wind_fc", "de_solar_fc"], 0),
     "de_residual_fc": (["de_load_fc", "de_wind_fc", "de_solar_fc"], 0),
+    # Forme de la journée J (calculée sur les 24 h de prévisions pour J, connues avant la fermeture)
+    "fr_rl_day_min": (["fr_load_fc", "fr_wind_fc", "fr_solar_fc"], 0),
+    "fr_rl_day_max": (["fr_load_fc", "fr_wind_fc", "fr_solar_fc"], 0),
+    "fr_rl_day_mean": (["fr_load_fc", "fr_wind_fc", "fr_solar_fc"], 0),
+    "fr_rl_rel": (["fr_load_fc", "fr_wind_fc", "fr_solar_fc"], 0),
+    "fr_rl_rank": (["fr_load_fc", "fr_wind_fc", "fr_solar_fc"], 0),
+    "fr_rl_min_hour": (["fr_load_fc", "fr_wind_fc", "fr_solar_fc"], 0),
+    "fr_solar_day_max": (["fr_solar_fc"], 0),
+    "de_rl_day_mean": (["de_load_fc", "de_wind_fc", "de_solar_fc"], 0),
+    "price_d1_rel": (["price_da"], 1),
+    # Régime récent (fenêtres glissantes qui s'arrêtent à J-1)
+    "spread_14d": (["price_da", "ttf_d2", "eua_d2"], 1),
+    "vol_14d": (["price_da"], 1),
+    "neg_share_14d": (["price_da"], 1),
+    "rl_slope_28d": (["price_da", "fr_load_fc", "fr_wind_fc", "fr_solar_fc"], 1),
 }
 
 
@@ -96,7 +111,12 @@ STEPS = {
     "B1": CALENDAR + PRICE_LAGS + FUNDAMENTALS,
     "B2": CALENDAR + PRICE_LAGS + FUNDAMENTALS + FUELS_NEIGHBOURS,
 }
-ALL_FEATURES = STEPS["B2"]
+# Extension post-test (inspirée de Chronos-2) : forme de la journée et régime récent
+DAY_SHAPE = ["fr_rl_day_min", "fr_rl_day_max", "fr_rl_day_mean", "fr_rl_rel", "fr_rl_rank",
+             "fr_rl_min_hour", "fr_solar_day_max", "de_rl_day_mean", "price_d1_rel"]
+REGIME = ["spread_14d", "vol_14d", "neg_share_14d", "rl_slope_28d"]
+STEPS["B3"] = STEPS["B2"] + DAY_SHAPE + REGIME
+ALL_FEATURES = STEPS["B3"]
 # Variante de contrôle : mêmes features que B2, cible prix brut (mesure l'apport de la normalisation)
 STEPS["B2_brut"] = STEPS["B2"]
 # Variante : normalisation pondérée par la charge résiduelle (cible prix − w(RL) × SRMC)
@@ -104,7 +124,7 @@ STEPS["B2_rl"] = STEPS["B2"]
 
 # Normalisation de la cible et des features en €/MWh, par marche :
 #   "full" : prix − SRMC ;  "rl" : prix − w(RL) × SRMC ;  absente : prix brut.
-NORMALIZATION = {"B2": "full", "B2_rl": "rl"}
+NORMALIZATION = {"B2": "full", "B2_rl": "rl", "B3": "full"}
 NORMALIZED_STEPS = set(NORMALIZATION)
 PRICE_LEVEL_FEATURES = ["price_d1", "price_d2", "price_d7", "price_d1_mean", "price_d1_min",
                         "price_d1_max", "de_price_d1", "de_price_d1_mean"]
@@ -214,7 +234,53 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     out["de_vre_fc"] = out["de_wind_fc"] + out["de_solar_fc"]
     out["de_residual_fc"] = out["de_load_fc"] - out["de_vre_fc"]
 
+    # --- Forme de la journée J : chaque heure « voit » le profil des prévisions de toute la journée
+    keys = day.to_numpy()
+    rl = out["fr_residual_fc"]
+    g = rl.groupby(keys)
+    out["fr_rl_day_min"] = g.transform("min").to_numpy()
+    out["fr_rl_day_max"] = g.transform("max").to_numpy()
+    out["fr_rl_day_mean"] = g.transform("mean").to_numpy()
+    out["fr_rl_rel"] = rl - out["fr_rl_day_mean"]                 # position de l'heure dans la journée
+    out["fr_rl_rank"] = g.rank(pct=True).to_numpy()
+    tmp = pd.DataFrame({"rl": rl.to_numpy(), "hour": hour.to_numpy(), "day": keys}).dropna()
+    min_hour = tmp.loc[tmp.groupby("day")["rl"].idxmin()].set_index("day")["hour"]
+    out["fr_rl_min_hour"] = min_hour.reindex(keys).to_numpy()    # heure du creux (souvent midi solaire)
+    out["fr_solar_day_max"] = out["fr_solar_fc"].groupby(keys).transform("max").to_numpy()
+    out["de_rl_day_mean"] = out["de_residual_fc"].groupby(keys).transform("mean").to_numpy()
+    out["price_d1_rel"] = out["price_d1"] - out["price_d1_mean"]  # forme de la courbe de la veille
+
+    # --- Régime récent : statistiques des jours J-1 à J-k (décalage d'un jour : rien de J lui-même)
+    for c, v in _recent_regime(out, day).items():
+        out[c] = v.reindex(keys).to_numpy()
+
     return out
+
+
+def _recent_regime(out: pd.DataFrame, day: pd.Series) -> dict:
+    """Indicateurs journaliers du régime récent, calculés sur les jours strictement antérieurs."""
+    price = out["price_da"]
+    x = out["fr_residual_fc"] / 1000                     # GW
+    both = price.notna() & x.notna()
+    xb, yb = x.where(both), price.where(both)
+    daily = pd.DataFrame({
+        "n": both.astype(float), "sx": xb, "sy": yb, "sxy": xb * yb, "sxx": xb * xb,
+        "spread": price - out["srmc_ccgt"], "price": price,
+        "neg": (price < 0).astype(float).where(price.notna()), "hours": price.notna().astype(float),
+    }).groupby(day.to_numpy()).agg({"n": "sum", "sx": "sum", "sy": "sum", "sxy": "sum", "sxx": "sum",
+                                    "spread": "mean", "price": "mean", "neg": "sum", "hours": "sum"})
+    daily = daily.reindex(pd.date_range(daily.index.min(), daily.index.max(), freq="D"))
+
+    r28 = daily[["n", "sx", "sy", "sxy", "sxx"]].rolling(28, min_periods=14).sum().shift(1)
+    den = r28["n"] * r28["sxx"] - r28["sx"] ** 2
+    slope = (r28["n"] * r28["sxy"] - r28["sx"] * r28["sy"]) / den.where(den > 0)
+    r14 = daily.rolling(14, min_periods=7)
+    return {
+        "spread_14d": r14["spread"].mean().shift(1),     # écart moyen prix − SRMC : le gaz fixe-t-il le prix ?
+        "vol_14d": r14["price"].std().shift(1),          # volatilité des prix journaliers moyens
+        "neg_share_14d": (r14["neg"].sum() / r14["hours"].sum()).shift(1),
+        "rl_slope_28d": slope,                           # €/MWh par GW de charge résiduelle, 28 derniers jours
+    }
 
 
 def gas_weight(df: pd.DataFrame) -> pd.Series:

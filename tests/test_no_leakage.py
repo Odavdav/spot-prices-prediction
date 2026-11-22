@@ -15,9 +15,10 @@ from src.features import (ALL_FEATURES, FEATURE_REGISTRY, RAW_PUBLICATION, STEPS
 
 @pytest.fixture(scope="module")
 def synthetic() -> pd.DataFrame:
-    """Trois semaines horaires aléatoires autour du passage à l'heure d'été (31/03/2024) et de Pâques."""
+    """Données horaires aléatoires autour du passage à l'heure d'été (31/03/2024) et de Pâques, avec
+    assez d'historique (6 semaines) pour que les fenêtres glissantes de 14 et 28 jours soient remplies."""
     rng = np.random.default_rng(0)
-    idx = pd.date_range("2024-03-15", "2024-04-12", freq="h", tz="UTC")
+    idx = pd.date_range("2024-02-15", "2024-04-12", freq="h", tz="UTC")
     df = pd.DataFrame(index=idx)
     for col in RAW_PUBLICATION:
         df[col] = rng.normal(100, 30, len(idx))

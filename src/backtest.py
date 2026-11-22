@@ -49,6 +49,9 @@ REFIT_VARIANTS = {"B1_hebdo": ("B1", "weekly", None), "B2_hebdo": ("B2", "weekly
 # Poids de récence : une ligne d'entraînement vieille de H jours pèse moitié moins (H à choisir en validation)
 HALF_LIVES = (90, 180, 365)
 REFIT_VARIANTS.update({f"B2_hebdo_hl{h}": ("B2", "weekly", h) for h in HALF_LIVES})
+# B3 = B2 + forme de la journée + régime récent
+REFIT_VARIANTS.update({"B3_hebdo": ("B3", "weekly", None), "B3_hebdo_hl90": ("B3", "weekly", 90),
+                       "B3_quotidien": ("B3", "daily", None)})
 
 
 def refit_dates(start: str, end: str, refit: str = "monthly") -> list:
@@ -109,6 +112,12 @@ DM_PAIRS = [
     ("B2_quotidien_corr", "B2_quotidien"),
     ("B2_quotidien_corr", "Chronos2_fond"),
     ("B2_hebdo_hl90_corr", "Chronos2_fond"),
+    # B3 : forme de la journée et régime récent (fixées avant les runs)
+    ("B3_hebdo", "B2_hebdo"),
+    ("B3_hebdo_corr", "B2_hebdo_corr"),
+    ("B3_hebdo_hl90_corr", "B2_hebdo_hl90_corr"),
+    ("B3_hebdo_corr", "Chronos2_fond"),
+    ("B3_hebdo_hl90_corr", "Chronos2_fond"),
     ("Chronos2_fond", "Chronos2_prix"),  # les fondamentaux aident-ils un modèle de fondation ?
     ("B2_hebdo", "Chronos2_fond"),       # LightGBM vs modèle de fondation, mêmes informations
     ("LEAR_quotidien", "LEAR_mensuel"),
