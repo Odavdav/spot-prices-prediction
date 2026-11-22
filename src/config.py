@@ -15,6 +15,9 @@ TZ = "Europe/Paris"
 PERIODS = {
     "validation": ("2024-11-01", "2025-11-01"),
     "test": ("2025-11-01", "2026-11-01"),
+    # Contrôle de robustesse : crise du gaz (TTF de 47 à plus de 300 €/MWh), pour mesurer
+    # l'apport de la normalisation par le SRMC quand le niveau des prix change brutalement.
+    "crise": ("2021-07-01", "2023-01-01"),
 }
 
 SEED = 42
