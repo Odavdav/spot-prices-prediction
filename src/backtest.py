@@ -40,18 +40,20 @@ EVENING_PEAK = range(18, 22)  # 18h-21h59, heure locale
 
 
 # --------------------------------------------------------------------- walk-forward
-REFIT_FREQ = {"monthly": "MS", "weekly": "7D"}
-WEEKLY_SUFFIX = "_hebdo"
-WEEKLY_STEPS = ["B1", "B2"]   # marches aussi testées avec réentraînement hebdomadaire
+REFIT_FREQ = {"monthly": "MS", "weekly": "7D", "daily": "D"}
+REFIT_SUFFIX = {"weekly": "_hebdo", "daily": "_quotidien"}
+# Variantes LightGBM à réentraînement plus fréquent que mensuel : nom -> (marche, rythme)
+REFIT_VARIANTS = {"B1_hebdo": ("B1", "weekly"), "B2_hebdo": ("B2", "weekly"),
+                  "B2_quotidien": ("B2", "daily")}
 
 
 def refit_dates(start: str, end: str, refit: str = "monthly") -> list:
-    """Dates de réentraînement : le 1er de chaque mois, ou tous les 7 jours à partir de `start`."""
+    """Dates de réentraînement : le 1er de chaque mois, tous les 7 jours, ou chaque jour depuis `start`."""
     return list(pd.date_range(start, end, freq=REFIT_FREQ[refit], tz=TZ, inclusive="left"))
 
 
 def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = "monthly") -> pd.Series:
-    """Prévisions (en €/MWh) de la marche `step` sur [start, end), réentraînement mensuel ou hebdomadaire."""
+    """Prévisions (en €/MWh) de la marche `step` sur [start, end), réentraînement au rythme `refit`."""
     y = get_y(f, step)
     X = get_X(f, step)
     dates = refit_dates(start, end, refit) + [pd.Timestamp(end, tz=TZ)]
@@ -62,9 +64,9 @@ def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = 
         model = lgb.LGBMRegressor(**LGB_PARAMS).fit(X[train], y[train])
         p = to_price(model.predict(X[pred]), f[pred], step)
         preds.append(pd.Series(p, index=f.index[pred]))
-        print(f"  {step} ({refit}) {m:%Y-%m-%d}  train={train.sum():6d}  pred={pred.sum():4d}")
-    name = step + (WEEKLY_SUFFIX if refit == "weekly" else "")
-    return pd.concat(preds).rename(name)
+        if refit != "daily" or m.day == 1:
+            print(f"  {step} ({refit}) {m:%Y-%m-%d}  train={train.sum():6d}  pred={pred.sum():4d}")
+    return pd.concat(preds).rename(step + REFIT_SUFFIX.get(refit, ""))
 
 
 # --------------------------------------------------------------------- test de Diebold-Mariano
@@ -77,6 +79,8 @@ DM_PAIRS = [
     ("B1_hebdo", "LEAR_hebdo"),     # à information égale et même rythme de réentraînement
     ("B2_hebdo", "B2"),             # réentraîner chaque semaine plutôt que chaque mois
     ("B2_hebdo", "LEAR_quotidien"), # meilleur LightGBM vs meilleur LEAR (ajoutée après les runs hebdo)
+    ("B2_quotidien", "B2_hebdo"),   # le réentraînement quotidien apporte-t-il encore ? (fixée avant le run)
+    ("B2_quotidien", "LEAR_quotidien"),  # même rythme que le LEAR de l'article (fixée avant le run)
     ("LEAR_quotidien", "LEAR_mensuel"),
     ("B2", "MSTL"),
 ]
@@ -150,8 +154,22 @@ def metrics(preds: pd.DataFrame, f: pd.DataFrame) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------- main
+def load_predictions(period: str) -> pd.DataFrame:
+    """Relit les prédictions déjà calculées : un fichier par modèle, pour que plusieurs runs
+    en parallèle n'écrasent pas les résultats les uns des autres."""
+    folder = PREDICTIONS_DIR / period
+    files = sorted(folder.glob("*.parquet")) if folder.exists() else []
+    return pd.concat([pd.read_parquet(p).iloc[:, 0].rename(p.stem) for p in files], axis=1) if files else None
+
+
+def save_prediction(period: str, pred: pd.Series) -> None:
+    folder = PREDICTIONS_DIR / period
+    folder.mkdir(parents=True, exist_ok=True)
+    pred.to_frame().to_parquet(folder / f"{pred.name}.parquet")
+
+
 def main():
-    models = list(STEPS) + [s + WEEKLY_SUFFIX for s in WEEKLY_STEPS] + list(BENCHMARKS)
+    models = list(STEPS) + list(REFIT_VARIANTS) + list(BENCHMARKS)
     ap = argparse.ArgumentParser()
     ap.add_argument("--period", choices=list(PERIODS), default="validation")
     ap.add_argument("--models", nargs="*", choices=models, default=models,
@@ -165,29 +183,29 @@ def main():
     f = add_features(load_dataset())
     in_period = (f["time_local"] >= pd.Timestamp(start, tz=TZ)) & (f["time_local"] < pd.Timestamp(end, tz=TZ))
 
-    path = PREDICTIONS_DIR / f"predictions_{args.period}.parquet"
-    preds = pd.read_parquet(path) if path.exists() else pd.DataFrame(index=f.index[in_period])
-    for name, col in NAIVE.items():
-        preds[name] = f.loc[preds.index, col]
-    PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
     for name in args.models:
         if name in BENCHMARKS:
-            preds[name] = BENCHMARKS[name](f, start, end)
+            pred = BENCHMARKS[name](f, start, end)
         elif name in STEPS:
-            preds[name] = walk_forward(f, name, start, end)
-        else:   # marche LightGBM réentraînée chaque semaine, ex. "B2_hebdo"
-            preds[name] = walk_forward(f, name.removesuffix(WEEKLY_SUFFIX), start, end, refit="weekly")
-        preds.to_parquet(path)   # sauvegarde après chaque modèle : un plantage ne perd pas le travail fait
-    order = list(NAIVE) + [m for m in models if m in preds]
-    preds = preds[order]
+            pred = walk_forward(f, name, start, end)
+        else:
+            step, refit = REFIT_VARIANTS[name]
+            pred = walk_forward(f, step, start, end, refit=refit)
+        save_prediction(args.period, pred.rename(name))   # sauvé tout de suite : un plantage ne perd rien
+
+    # Tableaux sur tout ce qui est disponible (y compris les modèles d'autres runs)
+    preds = pd.DataFrame({name: f.loc[in_period, col] for name, col in NAIVE.items()})
+    saved = load_predictions(args.period)
+    if saved is not None:
+        preds = preds.join(saved, how="left")
+    preds = preds[list(NAIVE) + [m for m in models if m in preds]
+                  + [m for m in preds if m not in models and m not in NAIVE]]
 
     table = metrics(preds, f)
     RESULTS.mkdir(exist_ok=True)
-    PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
     table.round(3).to_csv(RESULTS / f"metrics_{args.period}.csv")
     dm = dm_table(preds, f)
     dm.round(4).to_csv(RESULTS / f"diebold_mariano_{args.period}.csv")
-    preds.to_parquet(path)
 
     with pd.option_context("display.width", 140, "display.float_format", "{:.2f}".format):
         print(f"\n=== {args.period} : {start} -> {end} ===")
