@@ -86,7 +86,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
     ap.add_argument("--period", choices=list(PERIODS), required=True)
-    ap.add_argument("--history", nargs="+", default=[], help="périodes dont les prévisions servent d'historique")
+    ap.add_argument("--history", nargs="*", default=[], help="périodes dont les prévisions servent d'historique")
+    ap.add_argument("--name", default=None, help="nom de la sortie (par défaut <base>_corr)")
     args = ap.parse_args()
 
     parts = [pd.read_parquet(PREDICTIONS_DIR / p / f"{args.base}.parquet").iloc[:, 0]
@@ -95,6 +96,8 @@ def main():
     base = base[~base.index.duplicated(keep="last")].rename(args.base)
     df = load_dataset().loc[base.index]
     out = error_correction(base, df["price_da"], df["time_local"], *PERIODS[args.period])
+    if args.name:
+        out = out.rename(args.name)
     save_prediction(args.period, out)
     real = df.loc[out.index, "price_da"]
     print(f"{args.base} : MAE {(base.loc[out.index] - real).abs().mean():.2f} -> "
