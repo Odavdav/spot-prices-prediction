@@ -42,10 +42,13 @@ EVENING_PEAK = range(18, 22)  # 18h-21h59, heure locale
 # --------------------------------------------------------------------- walk-forward
 REFIT_FREQ = {"monthly": "MS", "weekly": "7D", "daily": "D"}
 REFIT_SUFFIX = {"weekly": "_hebdo", "daily": "_quotidien"}
-# Variantes LightGBM à réentraînement plus fréquent que mensuel : nom -> (marche, rythme)
-REFIT_VARIANTS = {"B1_hebdo": ("B1", "weekly"), "B2_hebdo": ("B2", "weekly"),
-                  "B2_quotidien": ("B2", "daily"), "B2_rl_hebdo": ("B2_rl", "weekly"),
-                  "B2_brut_hebdo": ("B2_brut", "weekly")}
+# Variantes LightGBM : nom -> (marche, rythme de réentraînement, demi-vie des poids de récence en jours)
+REFIT_VARIANTS = {"B1_hebdo": ("B1", "weekly", None), "B2_hebdo": ("B2", "weekly", None),
+                  "B2_quotidien": ("B2", "daily", None), "B2_rl_hebdo": ("B2_rl", "weekly", None),
+                  "B2_brut_hebdo": ("B2_brut", "weekly", None)}
+# Poids de récence : une ligne d'entraînement vieille de H jours pèse moitié moins (H à choisir en validation)
+HALF_LIVES = (90, 180, 365)
+REFIT_VARIANTS.update({f"B2_hebdo_hl{h}": ("B2", "weekly", h) for h in HALF_LIVES})
 
 
 def refit_dates(start: str, end: str, refit: str = "monthly") -> list:
@@ -53,8 +56,16 @@ def refit_dates(start: str, end: str, refit: str = "monthly") -> list:
     return list(pd.date_range(start, end, freq=REFIT_FREQ[refit], tz=TZ, inclusive="left"))
 
 
-def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = "monthly") -> pd.Series:
-    """Prévisions (en €/MWh) de la marche `step` sur [start, end), réentraînement au rythme `refit`."""
+def recency_weights(times: pd.Series, refit_date: pd.Timestamp, half_life: float) -> np.ndarray:
+    """Poids 0,5^(âge / demi-vie), l'âge étant compté en jours avant la date de réentraînement."""
+    age_days = (refit_date - times).dt.total_seconds().to_numpy() / 86400
+    return 0.5 ** (age_days / half_life)
+
+
+def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = "monthly",
+                 half_life: float | None = None) -> pd.Series:
+    """Prévisions (en €/MWh) de la marche `step` sur [start, end), réentraînement au rythme `refit`,
+    avec poids de récence si `half_life` est donnée."""
     y = get_y(f, step)
     X = get_X(f, step)
     dates = refit_dates(start, end, refit) + [pd.Timestamp(end, tz=TZ)]
@@ -62,7 +73,8 @@ def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = 
     for m, m_end in zip(dates[:-1], dates[1:]):
         train = (f["time_local"] < m) & y.notna()
         pred = (f["time_local"] >= m) & (f["time_local"] < m_end)
-        model = lgb.LGBMRegressor(**LGB_PARAMS).fit(X[train], y[train])
+        w = recency_weights(f.loc[train, "time_local"], m, half_life) if half_life else None
+        model = lgb.LGBMRegressor(**LGB_PARAMS).fit(X[train], y[train], sample_weight=w)
         p = to_price(model.predict(X[pred]), f[pred], step)
         preds.append(pd.Series(p, index=f.index[pred]))
         if refit != "daily" or m.day == 1:
@@ -86,6 +98,11 @@ DM_PAIRS = [
     ("B2_rl_hebdo", "B2_brut_hebdo"),  # ... vs aucune normalisation
     ("B2_rl", "B2"),                # idem au rythme mensuel (période de crise)
     ("B2_rl", "B2_brut"),
+    # Ajouts post-test (développés et choisis sur la validation) : imiter l'adaptation de Chronos-2
+    ("B2_hebdo_hl90", "B2_hebdo"),  # poids de récence, demi-vie 90 j
+    ("B2_hebdo_hl180", "B2_hebdo"),
+    ("B2_hebdo_hl365", "B2_hebdo"),
+    ("B2_hebdo_corr", "B2_hebdo"),  # correction par les erreurs récentes
     ("Chronos2_fond", "Chronos2_prix"),  # les fondamentaux aident-ils un modèle de fondation ?
     ("B2_hebdo", "Chronos2_fond"),       # LightGBM vs modèle de fondation, mêmes informations
     ("LEAR_quotidien", "LEAR_mensuel"),
@@ -196,8 +213,8 @@ def main():
         elif name in STEPS:
             pred = walk_forward(f, name, start, end)
         else:
-            step, refit = REFIT_VARIANTS[name]
-            pred = walk_forward(f, step, start, end, refit=refit)
+            step, refit, half_life = REFIT_VARIANTS[name]
+            pred = walk_forward(f, step, start, end, refit=refit, half_life=half_life)
         save_prediction(args.period, pred.rename(name))   # sauvé tout de suite : un plantage ne perd rien
 
     # Tableaux sur tout ce qui est disponible (y compris les modèles d'autres runs)

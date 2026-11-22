@@ -18,6 +18,9 @@ PERIODS = {
     # Contrôle de robustesse : crise du gaz (TTF de 47 à plus de 300 €/MWh), pour mesurer
     # l'apport de la normalisation par le SRMC quand le niveau des prix change brutalement.
     "crise": ("2021-07-01", "2023-01-01"),
+    # Rodage : prévisions hors échantillon de l'année précédant la validation, qui servent
+    # d'historique d'erreurs au modèle de correction (src/correction.py).
+    "rodage": ("2023-11-01", "2024-11-01"),
 }
 
 SEED = 42

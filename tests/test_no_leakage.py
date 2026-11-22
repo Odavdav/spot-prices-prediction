@@ -93,6 +93,28 @@ def test_lags_follow_local_hour_across_dst(synthetic):
     assert f.loc[ts("2024-04-01 12:00"), "price_d1_mean"] == pytest.approx(expected)
 
 
+def test_error_correction_uses_only_past_prices():
+    """La correction du jour J ne doit dépendre ni du prix de J ni d'aucun jour suivant."""
+    from src.correction import error_correction
+    rng = np.random.default_rng(1)
+    idx = pd.date_range("2024-01-01", "2024-06-30", freq="h", tz="UTC")
+    t = pd.Series(idx.tz_convert(TZ), index=idx)
+    price = pd.Series(rng.normal(80, 20, len(idx)), index=idx)
+    base = (price + rng.normal(5, 10, len(idx))).rename("base")
+    start, end, day = "2024-05-01", "2024-06-01", "2024-05-15"
+    full = error_correction(base, price, t, start, end)
+    after = (t >= pd.Timestamp(day, tz=TZ)).to_numpy()
+    price2 = price.copy()
+    price2[after] = rng.normal(500, 100, after.sum())     # prix de J et suivants bouleversés
+    base2 = base.copy()
+    later = (t >= pd.Timestamp(day, tz=TZ) + pd.Timedelta(days=1)).to_numpy()
+    base2[later] = 0.0                                      # prévisions des jours suivants aussi
+    seen = error_correction(base2, price2, t, start, end)
+    on_day = (full.index.tz_convert(TZ).strftime("%Y-%m-%d") == day)
+    pdt.assert_series_equal(full[on_day], seen[on_day])
+    assert not full.equals(seen)                            # le test a bien du mordant
+
+
 def test_calendar_flags():
     idx = pd.date_range("2024-05-08", "2024-05-12", freq="h", tz=TZ)
     df = pd.DataFrame({c: 1.0 for c in RAW_PUBLICATION}, index=idx)
