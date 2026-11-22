@@ -103,6 +103,12 @@ DM_PAIRS = [
     ("B2_hebdo_hl180", "B2_hebdo"),
     ("B2_hebdo_hl365", "B2_hebdo"),
     ("B2_hebdo_corr", "B2_hebdo"),  # correction par les erreurs récentes
+    ("B2_hebdo_hl90_corr", "B2_hebdo"),       # les deux combinés (demi-vie retenue : 90 j)
+    ("B2_hebdo_hl90_corr", "B2_hebdo_hl90"),  # la correction ajoute-t-elle aux poids de récence ?
+    # Fixées avant le passage sur le test des variantes retenues en validation
+    ("B2_quotidien_corr", "B2_quotidien"),
+    ("B2_quotidien_corr", "Chronos2_fond"),
+    ("B2_hebdo_hl90_corr", "Chronos2_fond"),
     ("Chronos2_fond", "Chronos2_prix"),  # les fondamentaux aident-ils un modèle de fondation ?
     ("B2_hebdo", "Chronos2_fond"),       # LightGBM vs modèle de fondation, mêmes informations
     ("LEAR_quotidien", "LEAR_mensuel"),
