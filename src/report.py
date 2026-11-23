@@ -54,7 +54,7 @@ NAMES = {
     "B1": "B1: + FR fundamentals", "B2": "B2: + gas, CO2, Germany", "B2_brut": "B2, raw-price target",
     "B2_rl": "B2, residual-load-weighted target",
     "B1_hebdo": "B1, weekly retraining", "B2_hebdo": "B2, weekly retraining",
-    "B2_quotidien": "B2, daily retraining (final)", "B2_rl_hebdo": "B2 weighted target, weekly",
+    "B2_quotidien": "B2, daily retraining (main)", "B2_rl_hebdo": "B2 weighted target, weekly",
     "B2_brut_hebdo": "B2 raw target, weekly", "MSTL": "MSTL", "LEAR_mensuel": "LEAR, monthly",
     "LEAR_hebdo": "LEAR, weekly", "LEAR_quotidien": "LEAR, daily",
     "Chronos2_prix": "Chronos-2, prices only", "Chronos2_fond": "Chronos-2 + fundamentals",
@@ -65,10 +65,12 @@ NAMES = {
     "B2_quotidien_corr": "B2 daily + error correction", "B3_hebdo": "B3 weekly (day shape, regime)",
     "B3_hebdo_hl90": "B3 weekly + recency", "B3_hebdo_corr": "B3 weekly + error correction",
     "B3_hebdo_hl90_corr": "B3 weekly + recency + correction",
+    "B3_quotidien_corr": "B3 daily + error correction",
+    "B3_quotidien_hl90_corr": "B3 daily + recency + correction (final)",
 }
 EXTENSION = ["B2_quotidien", "B2_quotidien_corr", "B2_hebdo", "B2_hebdo_corr", "B2_hebdo_hl90",
              "B2_hebdo_hl90_corr", "B3_hebdo", "B3_hebdo_corr", "B3_hebdo_hl90", "B3_hebdo_hl90_corr",
-             "Chronos2_fond"]
+             "B3_quotidien_corr", "B3_quotidien_hl90_corr", "Chronos2_fond"]
 
 
 def extension_table():
@@ -81,7 +83,7 @@ def extension_table():
     for name in EXTENSION:
         rows.append([NAMES[name], fmt(v, name, "toutes"), fmt(v, name, "negatif"), fmt(t, name, "toutes"),
                      fmt(t, name, "negatif"), fmt(t, name, "pointe_soir")])
-        if name in ("B3_hebdo_hl90_corr", "B2_quotidien_corr"):
+        if name in ("B3_quotidien_hl90_corr", "B3_quotidien_corr"):
             hl.append(len(rows) - 1)
     return table(rows, [5.6 * cm] + [2.2 * cm] * 5, highlight=hl)
 
@@ -168,7 +170,7 @@ def build():
         "linear reference (LEAR) and a zero-shot foundation model (Chronos-2), in a walk-forward backtest. "
         "Differences are tested with Diebold-Mariano tests using a HAC (Newey-West) variance.")]
     story += bullets([
-        "The final model (B2, retrained daily) reaches an MAE of <b>17.3 €/MWh</b> on the test year, "
+        "The main model (B2, retrained daily) reaches an MAE of <b>17.3 €/MWh</b> on the test year, "
         "44 % of the naive D-7 error, and beats LEAR by 3.2 €/MWh (p < 0.001).",
         "Fundamentals cut the error by 17–18 % beyond price lags, and by 27 % on negative-price hours (validation).",
         "Retraining daily instead of monthly is worth 2.5 €/MWh on the test year: model freshness is a first-order choice.",
@@ -176,8 +178,8 @@ def build():
         "Chronos-2, zero-shot but given the same fundamentals, does better still (14.4 €/MWh, p < 0.001), "
         "except on negative-price hours, where the two models are level.",
         "A post-test extension borrowing Chronos-2's ingredients (recent-error correction, recency weights, "
-        "day-shape and regime features) brings LightGBM to 15.9 €/MWh, halving the gap; Chronos-2 stays ahead "
-        "(p = 0.001).",
+        "day-shape and regime features) brings LightGBM, retrained daily, to 15.6 €/MWh; Chronos-2 stays ahead "
+        "(p = 0.007).",
     ])
 
     # ---------------------------------------------------------------- données
@@ -279,8 +281,10 @@ def build():
         "over 14 days and the price sensitivity to residual load over 28 days.",
     ])
     story += [extension_table(), P(
-        "MAE in €/MWh. Weekly retraining unless stated. Highlighted: the variant chosen on validation, and the "
-        "most balanced variant. n/a: not run on that period.", "caption")]
+        "MAE in €/MWh. Weekly retraining unless stated. Highlighted: the final model (chosen on validation) and "
+        "the most balanced variant. n/a: not run on that period. The daily models have no burn-in year: their "
+        "correction only starts after 90 days of validation, so their validation MAE is not comparable with "
+        "the weekly rows; the choice between them was made on Feb.–Oct. 2025.", "caption")]
     story += bullets([
         "<b>Error correction is the robust idea:</b> −1.16 €/MWh on B2 daily on the test year (p < 0.001), with "
         "negative-price hours unchanged.",
@@ -288,8 +292,13 @@ def build():
         "at the evening peak; on validation they mainly improved negative-price hours.",
         "<b>Recency weights backfired</b> on negative-price hours in the test year (about 23 against 18 €/MWh): a "
         "90-day half-life forgets earlier springs, when negative prices occur. This was not visible on validation.",
-        "The variant chosen on validation (B3 + recency + correction) reaches 15.92 €/MWh on the test year, "
-        "1.3 €/MWh better than the main model, but <b>Chronos-2 remains ahead by 1.5 €/MWh</b> (p = 0.001).",
+        "<b>Final model, retrained daily.</b> Daily retraining is too slow to run for every variant, so only the "
+        "two best weekly versions were rerun daily, with a rule written down beforehand: keep the one with the "
+        "lowest validation MAE on Feb.–Oct. 2025 and report its test figure. Recency weights won (12.33 against "
+        "13.15 €/MWh). On the test year the final model reaches <b>15.58 €/MWh</b>, 1.7 €/MWh better than the "
+        "main model (p < 0.001), but <b>Chronos-2 remains ahead by 1.2 €/MWh</b> (p = 0.007).",
+        "Without recency weights, the daily model is slightly worse overall (15.87) but the best LightGBM on "
+        "negative-price hours (17.6 €/MWh, ahead of Chronos-2's 19.6).",
     ])
 
     # ---------------------------------------------------------------- importance

@@ -8,16 +8,16 @@ reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
 
 **Headline results (test year, Nov. 2025 – Oct. 2026, run once):**
 
-- The final model (LightGBM with fundamentals, gas and CO₂ costs and German data, retrained daily)
+- The main model (LightGBM with fundamentals, gas and CO₂ costs and German data, retrained daily)
   reaches an MAE of **17.3 €/MWh**, i.e. **44 %** of the naive "same hour last week" error, and beats
   LEAR by 3.2 €/MWh (Diebold-Mariano p < 0.001).
 - **Retraining frequency matters as much as model choice:** daily instead of monthly retraining
   cuts the error by 2.5 €/MWh.
 - **A zero-shot foundation model given the same fundamentals does better still** (Chronos-2:
   14.4 €/MWh, p < 0.001), except on negative-price hours, where the two are level.
-- **Post-test extension:** borrowing Chronos-2's ingredients brings LightGBM down to **15.9 €/MWh**. Those
-  ingredients are recent-error correction, recency weights, and day-shape and regime features. That halves
-  the gap, but Chronos-2 stays significantly ahead (p = 0.001).
+- **Post-test extension:** borrowing Chronos-2's ingredients brings LightGBM down to **15.6 €/MWh**
+  (daily retraining). Those ingredients are recent-error correction, recency weights, and day-shape and
+  regime features. That closes most of the gap, but Chronos-2 stays significantly ahead (p = 0.007).
 
 ![Test results](results/figures/02_test_results.png)
 
@@ -114,7 +114,7 @@ change, around tricky days (clock changes, Easter). A deliberately planted leak 
 | B1: + French fundamentals | 15.5 (0.48) | 19.8 (0.50) | 19.6 | 21.3 |
 | B2: + gas, CO₂, Germany | 14.4 (0.44) | 19.8 (0.50) | 20.7 | 20.2 |
 | B2, weekly retraining | 13.8 (0.42) | 18.0 (0.45) | 18.8 | 18.9 |
-| **B2, daily retraining (final model)** | **13.5 (0.42)** | **17.3 (0.44)** | **18.2** | 18.3 |
+| **B2, daily retraining (main model)** | **13.5 (0.42)** | **17.3 (0.44)** | **18.2** | 18.3 |
 | **Chronos-2 + fundamentals** | (not run, see note) | **14.4 (0.36)** | 19.6 | **15.8** |
 
 Steps A1 to B2 are retrained monthly. Full tables are in [`results/`](results/) and in [`report.pdf`](report.pdf).
@@ -167,24 +167,31 @@ explain its edge.
 | Corrects itself quickly | **Recent-error correction:** a second-stage median regression predicts today's error from yesterday's error and the last 7 days' errors. Yesterday's error is known at 12:00 on D-1, since D-1 prices are published on D-2. Tested for leakage. |
 | Sees the whole day and the current regime | **Step B3 = B2 +** the shape of day D (residual-load minimum, maximum, mean and trough hour; each hour's position in the day; solar peak) **+** regime features (price − SRMC gap, volatility and negative-hour share over 14 days; price sensitivity to residual load over 28 days). |
 
-**Results (MAE in €/MWh; weekly retraining unless stated):**
+**Results (MAE in €/MWh):**
 
-| Model | Validation | Test | Test, negative hours |
-|---|---|---|---|
-| B2, daily retraining (main model) | 13.47 | 17.26 | 18.2 |
-| B2, daily + error correction | n/a | 16.10 | **18.0** |
-| B3 + error correction | 13.35 | 16.05 | 18.2 |
-| **B3 + recency weights + error correction** (chosen on validation) | **12.45** | **15.92** | 22.7 |
-| Chronos-2 + fundamentals | n/a | **14.42** | 19.6 |
+| Model | Retraining | Validation* | Test | Test, negative hours |
+|---|---|---|---|---|
+| B2 (main model) | daily | 13.41 | 17.26 | 18.2 |
+| B2 + error correction | daily | n/a | 16.10 | 18.0 |
+| B3 + error correction | weekly | 13.28 | 16.05 | 18.2 |
+| B3 + recency weights + error correction | weekly | 12.46 | 15.92 | 22.7 |
+| B3 + error correction | daily | 13.15 | 15.87 | **17.6** |
+| **B3 + recency weights + error correction** (final, chosen on validation) | daily | **12.33** | **15.58** | 22.9 |
+| Chronos-2 + fundamentals | none (zero-shot) | n/a | **14.42** | 19.6 |
+
+\* Feb.–Oct. 2025. The error correction needs a 90-day history, and the daily models only have the validation year behind them, so the first three months are left out of the comparison.
+
+**Choosing the final version.** Daily retraining was too slow to run for every variant (about 2.5 hours per year of backtest), so only the two best weekly versions were rerun daily. The rule was written down before the runs: keep the daily version with the lowest validation MAE on Feb.–Oct. 2025 and report its test figure, whatever it is. Recency weights won on validation (12.33 against 13.15).
 
 **What held up on the test year:**
 - **Error correction is the robust idea.** It cuts B2 daily's error by 1.16 €/MWh (p < 0.001) without hurting negative-price hours.
 - **Day-shape and regime features help:** B3 beats B2 by 0.69 €/MWh at the same retraining pace (p = 0.003), mostly at the evening peak.
+- **Daily retraining still pays** on top of all this: 15.58 against 15.92 with weekly retraining.
+- **The final extension model beats the main model by 1.7 €/MWh** (p < 0.001).
 
 **What did not hold up:**
-- **Recency weights backfired on negative-price hours** (22.7 against 18.2 €/MWh). A 90-day half-life makes the model forget earlier springs, which is precisely when negative prices happen. They looked harmless on validation.
-- **The model chosen on validation** (15.92) beats the main model by 1.3 €/MWh, but is no better than the same model without the B3 features (p = 0.26).
-- **Chronos-2 stays ahead by 1.5 €/MWh** (p = 0.001).
+- **Recency weights backfired on negative-price hours** (22.9 against 17.6 €/MWh without them). A 90-day half-life makes the model forget earlier springs, which is precisely when negative prices happen. They looked harmless on validation. Without recency weights, the daily model is the best LightGBM on negative hours and beats Chronos-2 there.
+- **Chronos-2 stays ahead by 1.2 €/MWh** (p = 0.007).
 
 **The lesson:** adapting fast to recent data helps ordinary hours but is risky for rare, seasonal events. A foundation model that has seen many regimes handles that trade-off better than a single-market model.
 
@@ -248,6 +255,8 @@ python -m src.backtest --period crise    # 2021-2022 gas crisis
 python -m src.backtest --period test     # test year, run once (about 3 to 4 hours on a laptop CPU)
 python -m src.backtest --period rodage --models B3_hebdo_hl90   # error history before validation
 python -m src.correction --base B3_hebdo_hl90 --period validation --history rodage
+python -m src.backtest --period test --models B3_quotidien_hl90   # final model, retrained daily
+python -m src.correction --base B3_quotidien_hl90 --period test --history validation
 python -m src.importance                 # SHAP importance
 python -m src.figures                    # figures
 python -m src.report                     # report.pdf

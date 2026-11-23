@@ -1,7 +1,7 @@
 """Figures du README et du rapport (results/figures/*.png).
 
 Libellés en anglais (README et rapport en anglais). Palette catégorielle de référence, ordre fixe :
-bleu = modèle final (B2 quotidien), orange = Chronos-2, vert d'eau = LEAR ; prix réalisé en noir.
+bleu = modèle principal (B2 quotidien), orange = Chronos-2, vert d'eau = LEAR ; prix réalisé en noir.
 
 Usage : python -m src.figures   (après src.backtest --period test et src.importance)
 """
@@ -24,7 +24,7 @@ FIG = RESULTS / "figures"
 SURFACE, INK, INK_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 BLUE, ORANGE, AQUA, YELLOW, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#b9b8b2"
 MODEL_COLORS = {"B2_quotidien": BLUE, "Chronos2_fond": ORANGE, "LEAR_quotidien": AQUA,
-                "B3_hebdo_hl90_corr": YELLOW}
+                "B3_quotidien_hl90_corr": YELLOW}
 
 LABELS = {
     "naive_d7": "Naive D-7", "naive_d1": "Naive D-1", "A1": "A1 calendar", "A2": "A2 + price lags",
@@ -32,7 +32,7 @@ LABELS = {
     "B2_hebdo": "B2, weekly retraining", "MSTL": "MSTL", "LEAR_quotidien": "LEAR (daily)",
     "Chronos2_prix": "Chronos-2, prices only", "Chronos2_fond": "Chronos-2 + fundamentals",
     "B2_quotidien_corr": "B2 daily + error correction*",
-    "B3_hebdo_hl90_corr": "B3 + recency + correction*",
+    "B3_quotidien_hl90_corr": "B3 daily + recency + correction*",
 }
 
 plt.rcParams.update({
@@ -75,7 +75,7 @@ def fig_merit_order(f):
 # --------------------------------------------------------------------- 2. résultats du test
 def fig_results(f, preds):
     models = ["naive_d7", "MSTL", "LEAR_quotidien", "Chronos2_prix", "A2", "B1", "B2",
-              "B2_hebdo", "B2_quotidien", "B2_quotidien_corr", "B3_hebdo_hl90_corr", "Chronos2_fond"]
+              "B2_hebdo", "B2_quotidien", "B2_quotidien_corr", "B3_quotidien_hl90_corr", "Chronos2_fond"]
     rows = f.loc[preds.index]
     ok = preds[models].notna().all(axis=1) & rows["price_da"].notna()
     err = preds.loc[ok, models].sub(rows.loc[ok, "price_da"], axis=0).abs()
@@ -156,7 +156,7 @@ def fig_importance():
     for i, v in enumerate(overall.values):
         ax.text(v + 0.2, i, f"{v:.1f}", va="center", fontsize=8, color=INK_2)
     ax.set_xlabel("Mean |SHAP value| (€/MWh)")
-    ax.set_title("What drives the final model (B2), test period")
+    ax.set_title("What drives the main model (B2), test period")
     ax.grid(axis="y", visible=False)
     _save(fig, "05_importance.png")
 
