@@ -43,7 +43,8 @@ EVENING_PEAK = range(18, 22)  # 18:00-21:59, local time
 REFIT_FREQ = {"monthly": "MS", "weekly": "7D", "daily": "D"}
 REFIT_SUFFIX = {"weekly": "_weekly", "daily": "_daily"}
 # LightGBM variants: name -> (step, retraining pace, half-life of the recency weights in days)
-REFIT_VARIANTS = {"B1_weekly": ("B1", "weekly", None), "B2_weekly": ("B2", "weekly", None),
+REFIT_VARIANTS = {"A1_weekly": ("A1", "weekly", None), "A2_weekly": ("A2", "weekly", None),
+                  "B1_weekly": ("B1", "weekly", None), "B2_weekly": ("B2", "weekly", None),
                   "B2_daily": ("B2", "daily", None), "B2_rl_weekly": ("B2_rl", "weekly", None),
                   "B2_raw_weekly": ("B2_raw", "weekly", None)}
 # Recency weights: a training row H days old weighs half as much (H chosen on validation)
@@ -127,6 +128,10 @@ DM_PAIRS = [
     ("B2_weekly", "Chronos2_fund"),        # LightGBM vs foundation model, same information
     ("LEAR_daily", "LEAR_monthly"),
     # LEAR with the B2 information (fixed before the runs)
+    # Weekly ablation, one block at a time (fixed before the A1/A2 weekly runs)
+    ("A2_weekly", "A1_weekly"),
+    ("B1_weekly", "A2_weekly"),
+    ("B2_weekly", "B1_weekly"),
     ("B2_daily", "LEAR_B2_daily"),  # same information and same pace: model effect only
     ("LEAR_B2_daily", "LEAR_daily"),  # do gas, CO2 and Germany help a linear model?
     ("B2", "MSTL"),

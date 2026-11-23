@@ -22,7 +22,7 @@ reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
   (daily retraining). Those ingredients are recent-error correction, recency weights, and day-shape and
   regime features. That closes most of the gap, but Chronos-2 stays significantly ahead (p = 0.006).
 
-![Test results](results/figures/02_test_results.png)
+![Models at equal information](results/figures/04_models.png)
 
 ---
 
@@ -45,7 +45,7 @@ reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
 
 | Hypothesis (set before modelling) | Verdict |
 |---|---|
-| Fundamentals, above all residual load, bring most of the gain beyond price lags, especially on negative-price hours and peaks. | **Confirmed.** Adding French fundamentals cuts the error by 17 % (validation) to 18 % (test); on negative hours by 27 % on validation but only 13 % on the test. |
+| Fundamentals, above all residual load, bring most of the gain beyond price lags, especially on negative-price hours and peaks. | **Confirmed.** Adding French fundamentals cuts the error by 18 % (validation) to 20 % (test); on negative hours by 27 % on validation but only 13 % on the test. |
 | At a one-day horizon, gas and CO₂ add little in a stable regime but matter as a *scale* when prices change regime, hence normalising the target by the gas-plant cost (SRMC). | **Confirmed.** Normalising changes nothing in calm years (p = 0.73) but cuts the error by 17 % in the 2021–2022 gas crisis (p < 0.001). |
 | A "universal" model that only sees past prices (MSTL, Chronos) stays below the model with fundamentals. | **True for price-only models, false once the foundation model gets the fundamentals.** |
 
@@ -106,68 +106,84 @@ change, around tricky days (clock changes, Easter). A deliberately planted leak 
 
 ## Results
 
-**Error by model (MAE in €/MWh; rMAE in brackets):**
+Each result below answers one question and varies **one thing at a time**: the information, the
+retraining pace, the model or the target. Full tables (every model, every period, every
+Diebold-Mariano test) are in [`results/`](results/).
 
-| Model | Validation | Test | Test, negative hours | Test, evening peak |
-|---|---|---|---|---|
-| Naive D-7 | 32.4 (1.00) | 39.7 (1.00) | 30.6 | 42.3 |
-| MSTL (prices only) | 19.0 (0.59) | 23.6 (0.59) | 33.4 | 27.0 |
-| LEAR, daily | 15.0 (0.46) | 20.5 (0.52) | 24.7 | 19.4 |
-| LEAR-B2, daily (same information as B2) | 14.2 (0.44) | 18.2 (0.46) | 22.1 | 18.1 |
-| Chronos-2, prices only | (not run, see note) | 19.8 (0.50) | 19.0 | 24.7 |
-| A2: + price lags | 18.5 (0.57) | 24.0 (0.60) | 22.6 | 26.7 |
-| B1: + French fundamentals | 15.5 (0.48) | 19.8 (0.50) | 19.6 | 21.3 |
-| B2: + gas, CO₂, Germany | 14.4 (0.44) | 19.8 (0.50) | 20.7 | 20.2 |
-| B2, weekly retraining | 13.8 (0.42) | 18.0 (0.45) | 18.8 | 18.9 |
-| **B2, daily retraining (main model)** | **13.5 (0.42)** | **17.3 (0.44)** | **18.2** | 18.3 |
-| **Chronos-2 + fundamentals** | (not run, see note) | **14.4 (0.36)** | 19.6 | **15.8** |
+**Summary (MAE in €/MWh; rMAE vs naive D-7 in brackets):**
 
-Steps A1 to B2 are retrained monthly. Full tables (all models, all periods, all Diebold-Mariano tests) are in [`results/`](results/).
+| Model | Information | Updated | Validation | Test | Test, negative hours | Test, evening peak |
+|---|---|---|---|---|---|---|
+| Naive D-7 | last week's price | – | 32.4 | 39.7 | 30.6 | 42.3 |
+| LEAR | B1 (no gas, no Germany) | daily | 15.0 | 20.5 (0.52) | 24.7 | 19.4 |
+| LEAR-B2 | B2 | daily | 14.2 | 18.2 (0.46) | 22.1 | 18.1 |
+| **LightGBM B2 (main model)** | B2 | daily | **13.5** | 17.3 (0.44) | **18.2** | 18.3 |
+| LightGBM final (post-test extension) | B3 + error correction | daily | 12.4 | 15.6 (0.39) | 22.9 | **15.7** |
+| **Chronos-2 + fundamentals** | B2 | zero-shot | not run | **14.4 (0.36)** | 19.6 | 15.8 |
 
 Chronos-2 was released on 17 Oct. 2025, after the validation year had started, so it may have seen
 those prices during pre-training. It was therefore run on the test year only, which it cannot have seen.
 
-**Selected Diebold-Mariano tests, test year** (negative gap = first model better):
+### 1. What each block of information is worth
 
-| Comparison | MAE gap (€/MWh) | p-value |
-|---|---|---|
-| B2 daily vs LEAR daily | −3.20 | < 0.001 |
-| B2 daily vs LEAR-B2 daily (same information, same cadence) | −0.90 | 0.02 |
-| LEAR-B2 daily vs LEAR daily (gas, CO₂ and Germany for a linear model) | −2.30 | < 0.001 |
-| B2 daily vs B2 weekly | −0.78 | < 0.001 |
-| B2 weekly vs B2 monthly | −1.76 | < 0.001 |
-| B1 weekly vs LEAR weekly (same information, same cadence) | −1.95 | 0.01 |
-| B2 daily vs Chronos-2 + fundamentals (chosen after seeing the results) | +2.87 | < 0.001 |
-| B2 (price − SRMC target) vs raw-price target | +0.47 | 0.09 |
+![Information blocks](results/figures/02_information.png)
 
-**Retraining frequency.** Updating the model often helps both families, with diminishing returns.
-LEAR, whose short windows go stale, collapses when re-estimated only monthly.
+Same model (LightGBM), same weekly retraining; one block of information added at each step.
+
+- **Price lags** do most of the work: calendar effects alone are worse than the naive forecast.
+- **French fundamentals** cut the error by a further 18 % (validation) to 20 % (test), p < 0.001 on both. On negative-price hours the gain is 27 % on validation but only 13 % on the test: less stable than the overall gain.
+- **Gas, CO₂ and Germany** add a smaller but significant 1.35 (validation, p < 0.001) and 0.95 €/MWh (test, p = 0.03), mostly at the evening peak, when gas plants set the price.
+
+### 2. How often to retrain
 
 ![Retraining frequency](results/figures/03_retraining.png)
 
-**Normalising by the gas-plant cost is insurance, not a free lunch.**
-- **Crisis (Jul. 2021 – Dec. 2022):** predicting price − SRMC instead of the raw price cuts B2's error from 38.0 to 31.4 €/MWh (p < 0.001). The gain grows with the gas price, reaching 16 €/MWh in Q3 2022.
-- **Calm years:** it makes no difference (validation p = 0.73; test +0.47, p = 0.09).
-- **Negative-price hours are the exception:** on the test year, the raw-price target does better than the normalised one on negative hours (17.7 vs 20.7 €/MWh with monthly retraining, 17.4 vs 18.8 with weekly retraining); the two are level on validation. When the price is negative, gas is not setting it, so subtracting the gas cost adds noise rather than removing it.
-- **Weighting by residual load:** the pass-through of gas cost to the French price varies with residual load, from 0.7 to 1.2. Weighting the normalisation by it adds nothing on any period (p = 0.61 to 0.74): LightGBM already learns that interaction.
+Same information (B2 for LightGBM, B1 for LEAR); only the retraining pace changes.
 
-**A test week.** The models track the daily profile closely. Chronos-2 is closest on most days but
-overshoots the midday dip on Friday 8 May, forecasting −50 €/MWh against an actual price of about 0.
-That illustrates why its edge disappears on negative-price hours.
+- Updating often helps both model families, with diminishing returns. For LightGBM, weekly instead of monthly is worth 1.76 €/MWh on the test and daily instead of weekly another 0.78 (both p < 0.001).
+- LEAR, whose short calibration windows go stale, collapses when re-estimated only monthly.
 
-![Test week](results/figures/04_test_week.png)
+### 3. Which model, at equal information
+
+See the figure at the top of the page. Every model is updated daily (MSTL and Chronos-2 re-read the latest prices at each forecast).
+
+| Comparison (test year) | MAE gap (€/MWh) | p-value |
+|---|---|---|
+| LightGBM vs LEAR, both with B2's information | −0.90 | 0.02 |
+| LEAR with vs without gas, CO₂ and Germany | −2.30 | < 0.001 |
+| Chronos-2 with vs without fundamentals | −5.41 | < 0.001 |
+| LightGBM vs Chronos-2, both with B2's information (chosen after seeing the results) | +2.87 | < 0.001 |
+
+- **With prices only,** the foundation model (Chronos-2) clearly beats the classical decomposition (MSTL), most of all on negative-price hours.
+- **With the same information, LightGBM beats LEAR by only 0.9 €/MWh**, and almost all of it on negative-price hours (18.2 vs 22.1). The two are level at the evening peak. The information matters more than the model: gas, CO₂ and German data cut LEAR's error by 2.3 €/MWh.
+- **Chronos-2 with fundamentals is the best model overall** (14.4), but not on negative-price hours, where LightGBM is better (18.2 vs 19.6).
+
+### 4. Normalising the target by the gas-plant cost
+
+![Normalisation](results/figures/05_normalisation.png)
+
+Same model, same information (B2); only the target changes: raw price, price − SRMC, or price − w(RL) × SRMC,
+where w is the pass-through of gas cost to the French price by residual-load decile (0.7 to 1.5).
+
+- **Crisis (Jul. 2021 – Dec. 2022):** predicting price − SRMC cuts the error from 38.0 to 31.4 €/MWh (p < 0.001). The gain grows with the gas price, reaching 16 €/MWh in Q3 2022.
+- **Calm years:** no difference (monthly retraining: validation p = 0.73, test p = 0.09).
+- **Negative-price hours are the exception:** on the test year the raw-price target does better there (17.4 vs 18.8 €/MWh, weekly retraining); the two are level on validation. When the price is negative, gas is not setting it, so subtracting the gas cost adds noise.
+- **Weighting by residual load** adds nothing on any period (p = 0.61 to 0.74): LightGBM already learns that interaction.
+
+### 5. One test week
+
+![Test week](results/figures/07_test_week.png)
+
+The models track the daily profile closely. Chronos-2 is closest on most days but overshoots the
+midday dip on Friday 8 May, forecasting −50 €/MWh against an actual price of about 0. That
+illustrates why its edge disappears on negative-price hours.
 
 ## Post-test extension: borrowing from Chronos-2
 
 After seeing Chronos-2 win on the test year, we tried to give LightGBM the ingredients that probably
-explain its edge.
-
-**How this was done:**
-- Each idea was developed and **chosen on the validation year only**, then run once on the test year.
-- The comparisons were fixed in advance.
-- Because the idea itself came from a test result, this section is reported separately from the main results.
-
-**The three ideas:**
+explain its edge. Each idea was developed and **chosen on the validation year only**, then run once on
+the test year with comparisons fixed in advance. Because the idea itself came from a test result,
+this section is reported separately from the main results.
 
 | Chronos-2 behaviour | LightGBM counterpart |
 |---|---|
@@ -175,33 +191,23 @@ explain its edge.
 | Corrects itself quickly | **Recent-error correction:** a second-stage median regression predicts today's error from yesterday's error and the last 7 days' errors. Yesterday's error is known at 12:00 on D-1, since D-1 prices are published on D-2. Tested for leakage. |
 | Sees the whole day and the current regime | **Step B3 = B2 +** the shape of day D (residual-load minimum, maximum, mean and trough hour; each hour's position in the day; solar peak) **+** regime features (price − SRMC gap, volatility and negative-hour share over 14 days; price sensitivity to residual load over 28 days). |
 
-**Results (MAE in €/MWh):**
+![Extension](results/figures/06_extension.png)
 
-| Model | Retraining | Validation* | Test | Test, negative hours |
-|---|---|---|---|---|
-| B2 (main model) | daily | 13.41 | 17.26 | 18.2 |
-| B2 + error correction | daily | n/a | 16.10 | 18.0 |
-| B3 + error correction | weekly | 13.28 | 16.05 | 18.2 |
-| B3 + recency weights + error correction | weekly | 12.46 | 15.92 | 22.7 |
-| B3 + error correction | daily | 13.15 | 15.87 | **17.6** |
-| **B3 + recency weights + error correction** (final, chosen on validation) | daily | **12.33** | **15.58** | 22.9 |
-| Chronos-2 + fundamentals | none (zero-shot) | n/a | **14.39** | 19.6 |
+- **Error correction is the robust idea:** −1.16 €/MWh on the main model (p < 0.001), with negative-price hours unchanged.
+- **Day-shape and regime features help** a little more (B3 vs B2 at the same pace: −0.69 €/MWh with weekly retraining, p = 0.003).
+- **Recency weights backfired on negative-price hours** (22.9 against 17.6 €/MWh without them). A 90-day half-life makes the model forget earlier springs, which is precisely when negative prices happen. They looked harmless on validation.
+- **The final model beats the main model by 1.7 €/MWh** (p < 0.001), but **Chronos-2 stays ahead by 1.2 €/MWh** (p = 0.006).
 
-\* Feb.–Oct. 2025. The error correction needs a 90-day history, and the daily models only have the validation year behind them, so the first three months are left out of the comparison.
+**Choosing the final version.** Daily retraining was too slow to run for every variant (about 2.5 hours
+per year of backtest), so only the two best weekly versions were rerun daily. The rule was written down
+before the runs: keep the daily version with the lowest validation MAE on Feb.–Oct. 2025 (the error
+correction needs a 90-day history first) and report its test figure, whatever it is. Recency weights
+won on validation (12.33 against 13.15), so they are in the final model, even though the version
+without them did better on the test (15.87, and 17.6 on negative-price hours).
 
-**Choosing the final version.** Daily retraining was too slow to run for every variant (about 2.5 hours per year of backtest), so only the two best weekly versions were rerun daily. The rule was written down before the runs: keep the daily version with the lowest validation MAE on Feb.–Oct. 2025 and report its test figure, whatever it is. Recency weights won on validation (12.33 against 13.15).
-
-**What held up on the test year:**
-- **Error correction is the robust idea.** It cuts B2 daily's error by 1.16 €/MWh (p < 0.001) without hurting negative-price hours.
-- **Day-shape and regime features help:** B3 beats B2 by 0.69 €/MWh at the same retraining pace (p = 0.003), mostly at the evening peak.
-- **Daily retraining still pays** on top of all this: 15.58 against 15.92 with weekly retraining.
-- **The final extension model beats the main model by 1.7 €/MWh** (p < 0.001).
-
-**What did not hold up:**
-- **Recency weights backfired on negative-price hours** (22.9 against 17.6 €/MWh without them). A 90-day half-life makes the model forget earlier springs, which is precisely when negative prices happen. They looked harmless on validation. Without recency weights, the daily model is the best LightGBM on negative hours and beats Chronos-2 there.
-- **Chronos-2 stays ahead by 1.2 €/MWh** (p = 0.006).
-
-**The lesson:** adapting fast to recent data helps ordinary hours but is risky for rare, seasonal events. A foundation model that has seen many regimes handles that trade-off better than a single-market model.
+**The lesson:** adapting fast to recent data helps ordinary hours but is risky for rare, seasonal
+events. A foundation model that has seen many regimes handles that trade-off better than a
+single-market model.
 
 ## What drives the forecasts
 
@@ -209,12 +215,12 @@ The SHAP values below are for B2, trained on all data before the test and explai
 (`src/importance.py`). They explain the spread to the gas-plant cost (the model's target). The SRMC
 level itself is added back afterwards.
 
-![Feature importance](results/figures/05_importance.png)
+![Feature importance](results/figures/08_importance.png)
 
 - **Yesterday's price at the same hour** dominates (16 €/MWh of average contribution). Prices are persistent from one day to the next.
 - **French and German residual load** come next, ahead of the raw load, wind and solar forecasts. The model reasons in "what is left for dispatchable plants to cover", across the coupled FR-DE zone. Solar alone looks minor because residual load and the renewables share already carry its effect.
 
-![Importance by regime and hour](results/figures/06_importance_regime_hour.png)
+![Importance by regime and hour](results/figures/09_importance_regime_hour.png)
 
 - **Negative-price hours** are driven more by residual load (FR and DE: 16 % each, against 11 % at the evening peak). Calendar effects matter much less (3 % against 7 %). Prices collapse when renewables exceed demand, whatever the day.
 - **Evening hours (19:00–21:00)** lean most on yesterday's price, because the evening peak is the most repetitive part of the day.
@@ -247,7 +253,7 @@ The merit-order picture behind these results:
   - It could not be checked on the validation year.
   - The B2 daily vs Chronos-2 comparison was not fixed in advance.
 - **One test year and fixed hyperparameters.** No tuning was done. The negative-hour statistics rest on 513 (validation) and 565 (test) hours.
-- **LEAR-B2 was added after the test year had been run**, in answer to a review: it isolates the model effect in the LEAR comparison. Its design and comparisons were fixed before it was run, and no choice depends on it.
+- **LEAR-B2 and the weekly ablation steps A1 and A2 were added after the test year had been run**, in answer to a review: they isolate the model effect in the LEAR comparison and put the whole ablation at one retraining pace. Their design and comparisons were fixed before they were run, and no choice depends on them.
 - **The post-test extension was motivated by a test result.** Each idea was developed and chosen on validation, but the test year has now been used more than once, so its test figures are less clean than the main results.
 - The gas pass-through weights w(RL) are estimated before the validation year and **drift over time** (0.26 at low residual load in 2024 against 0.5–0.8 before).
 
