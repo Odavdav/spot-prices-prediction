@@ -12,7 +12,6 @@ holidays>=0.40
 python-dotenv>=1.0
 matplotlib>=3.8
 seaborn>=0.13
-reportlab>=4.0
 jupyter
 nbstripout
 pytest

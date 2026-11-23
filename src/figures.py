@@ -1,4 +1,4 @@
-"""README and report figures (results/figures/*.png).
+"""README figures (results/figures/*.png).
 
 Reference categorical palette, fixed order: blue = main model (B2 daily), orange = Chronos-2,
 aqua = LEAR, yellow = final extension model; actual price in black.

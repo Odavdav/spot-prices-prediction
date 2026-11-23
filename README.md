@@ -117,7 +117,7 @@ change, around tricky days (clock changes, Easter). A deliberately planted leak 
 | **B2, daily retraining (main model)** | **13.5 (0.42)** | **17.3 (0.44)** | **18.2** | 18.3 |
 | **Chronos-2 + fundamentals** | (not run, see note) | **14.4 (0.36)** | 19.6 | **15.8** |
 
-Steps A1 to B2 are retrained monthly. Full tables are in [`results/`](results/) and in [`report.pdf`](report.pdf).
+Steps A1 to B2 are retrained monthly. Full tables (all models, all periods, all Diebold-Mariano tests) are in [`results/`](results/).
 
 Chronos-2 was released on 17 Oct. 2025, after the validation year had started, so it may have seen
 those prices during pre-training. It was therefore run on the test year only, which it cannot have seen.
@@ -260,7 +260,6 @@ python -m src.backtest --period test --models B3_daily_hl90   # final model, ret
 python -m src.correction --base B3_daily_hl90 --period test --history validation
 python -m src.importance                 # SHAP importance
 python -m src.figures                    # figures
-python -m src.report                     # report.pdf
 ```
 
 ```
@@ -272,7 +271,6 @@ src/
   correction.py   recent-error correction (second stage)
   importance.py   SHAP feature importance
   figures.py      figures
-  report.py       PDF report
 tests/            leakage tests
 results/          metrics, tests and figures (versioned)
 ```
