@@ -67,9 +67,10 @@ def recency_weights(times: pd.Series, refit_date: pd.Timestamp, half_life: float
 
 
 def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = "monthly",
-                 half_life: float | None = None) -> pd.Series:
+                 half_life: float | None = None, params: dict | None = None,
+                 verbose: bool = True) -> pd.Series:
     """Forecasts (in €/MWh) of step `step` on [start, end), retrained at pace `refit`,
-    with recency weights if `half_life` is given."""
+    with recency weights if `half_life` is given and LightGBM `params` (default LGB_PARAMS)."""
     y = get_y(f, step)
     X = get_X(f, step)
     dates = refit_dates(start, end, refit) + [pd.Timestamp(end, tz=TZ)]
@@ -78,10 +79,10 @@ def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = 
         train = (f["time_local"] < m) & y.notna()
         pred = (f["time_local"] >= m) & (f["time_local"] < m_end)
         w = recency_weights(f.loc[train, "time_local"], m, half_life) if half_life else None
-        model = lgb.LGBMRegressor(**LGB_PARAMS).fit(X[train], y[train], sample_weight=w)
+        model = lgb.LGBMRegressor(**(params or LGB_PARAMS)).fit(X[train], y[train], sample_weight=w)
         p = to_price(model.predict(X[pred]), f[pred], step)
         preds.append(pd.Series(p, index=f.index[pred]))
-        if refit != "daily" or m.day == 1:
+        if verbose and (refit != "daily" or m.day == 1):
             print(f"  {step} ({refit}) {m:%Y-%m-%d}  train={train.sum():6d}  pred={pred.sum():4d}")
     return pd.concat(preds).rename(step + REFIT_SUFFIX.get(refit, ""))
 
@@ -136,6 +137,10 @@ DM_PAIRS = [
     ("LEAR_B2_daily", "LEAR_daily"),  # do gas, CO2 and Germany help a linear model?
     ("B2", "MSTL"),
     ("Chronos2_prices", "MSTL"),   # prices only (added after the test run, for the README)
+    # Hyperparameter tuning (fixed before the search, see src/tuning.py)
+    ("B2_daily_tuned", "B2_daily"),
+    ("B3_daily_hl90_tuned_corr", "B3_daily_hl90_corr"),
+    ("B3_daily_hl90_tuned_corr", "Chronos2_fund"),
 ]
 
 
