@@ -137,3 +137,15 @@ def test_calendar_flags():
     assert f.loc["2024-05-10", "is_bridge"] == 1    # bridge Friday
     assert f.loc["2024-05-08", "is_holiday"] == 1   # 8 May
     assert f.loc["2024-05-10", "is_holiday"] == 0
+
+
+def test_chronos_gap_filling_uses_only_past_values():
+    """Filling a covariate gap must not use any later value (once the series has started)."""
+    from src.benchmarks import _fill_from_past
+    rng = np.random.default_rng(2)
+    cov = pd.DataFrame({"x": rng.normal(size=24 * 10)})
+    cov.iloc[100:130, 0] = np.nan                       # a gap longer than a day
+    filled = _fill_from_past(cov)
+    changed = cov.copy()
+    changed.iloc[130:, 0] = 1e6                         # everything after the gap altered
+    pdt.assert_frame_equal(filled.iloc[:130], _fill_from_past(changed).iloc[:130])

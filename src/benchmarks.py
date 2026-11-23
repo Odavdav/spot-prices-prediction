@@ -189,13 +189,20 @@ def _chronos():
     return _chronos_pipeline
 
 
+def _fill_from_past(cov: pd.DataFrame) -> pd.DataFrame:
+    """Fill covariate gaps with past values only (Chronos-2 does not accept missing covariates):
+    the same hour one day earlier, then the last known value. The few leading gaps at the very start
+    of the dataset (Oct. 2018, far outside every context window) are filled backwards."""
+    return cov.fillna(cov.shift(24)).ffill().bfill().astype(float)
+
+
 def chronos_forecasts(f: pd.DataFrame, start: str, end: str, covariates: bool) -> pd.Series:
     """Median forecast of Chronos-2 for each day of [start, end), from the last CHRONOS_CONTEXT
     hours known at the end of D-1 (and the variables known for D)."""
     name = "Chronos2_fund" if covariates else "Chronos2_prices"
     local = f["time_local"].dt.tz_convert(TZ)
     cols = CHRONOS_KNOWN + CHRONOS_PAST_ONLY
-    cov = f[cols].interpolate(limit_direction="both").astype(float) if covariates else None
+    cov = _fill_from_past(f[cols]) if covariates else None
     price = f["price_da"].to_numpy()
     tasks, targets = [], []
     for d in _period_days(start, end):
