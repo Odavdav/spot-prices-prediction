@@ -223,7 +223,7 @@ The merit-order picture behind these results:
 2. **Gas increasingly fails to set the French price.** The average spread between price and CCGT cost went from +1–6 €/MWh (2018–2022) to −35 €/MWh (2024–2026), as nuclear recovered and solar grew. Normalising by gas cost protects against fuel shocks, but tells less and less about everyday prices, and on the test year it even hurt on negative-price hours, where gas plays no role.
 3. **Model freshness is a first-order choice.** Retraining daily instead of monthly is worth 2.5 €/MWh on the test year and costs about 8 seconds a day in production.
 4. **Linear models are competitive in normal hours; non-linearity earns its keep around renewables thresholds.** With the same information and cadence, LightGBM beats LEAR on the test (p = 0.01). Its edge is largest on negative-price hours (19.6 vs 24.7 €/MWh), while LEAR is as good or better at the evening peak.
-5. **In-context foundation models are a serious contender.** Fed the same fundamentals, a zero-shot model beat a tuned gradient-boosting model by 16 %. It adapts to the latest weeks of data at every forecast, but it can overshoot extreme renewables hours.
+5. **In-context foundation models are a serious contender.** Fed the same fundamentals, a zero-shot model, never trained on this market, beat a gradient-boosting model trained on seven years of French data by 16 %. It adapts to the latest weeks of data at every forecast, but it can overshoot extreme renewables hours.
 6. **Correcting yesterday's bias is the cheapest win; forgetting the past is the riskiest.** A recent-error correction is worth 1.2 €/MWh. Down-weighting old data helps ordinary hours, but it erases the seasonal memory needed for negative prices.
 
 ## Limitations
