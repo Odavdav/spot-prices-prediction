@@ -1,12 +1,11 @@
-"""Importance des features du modèle final (B2) : valeurs SHAP, globales, par régime et par heure.
+"""Feature importance of the main model (B2): SHAP values, overall, by regime and by hour.
 
-Le modèle est entraîné une fois sur toutes les livraisons antérieures au test (avant le 01/11/2025),
-puis expliqué sur les heures du test. Les valeurs SHAP (TreeSHAP, fournies par LightGBM) décomposent
-chaque prédiction en contributions additives des features, en €/MWh. La cible de B2 étant
-prix − SRMC, elles expliquent l'écart au coût d'un CCGT ; le niveau du SRMC lui-même est rajouté
-après coup et n'apparaît donc pas ici.
+The model is trained once on every delivery before the test year (before 2025-11-01), then
+explained on the test hours. SHAP values (TreeSHAP, provided by LightGBM) decompose each prediction
+into additive feature contributions, in €/MWh. Since B2's target is price − SRMC, they explain the
+spread to the cost of a CCGT; the SRMC level itself is added back afterwards and does not appear here.
 
-Usage : python -m src.importance
+Usage: python -m src.importance
 """
 import lightgbm as lgb
 import numpy as np
@@ -19,7 +18,7 @@ from src.features import add_features, get_X, get_y
 
 STEP = "B2"
 
-# Regroupement lisible des features (libellés en anglais : ils apparaissent dans les figures du README)
+# Readable feature groups (shown in the README figures)
 GROUPS = {
     "FR price D-1 (same hour)": ["price_d1"],
     "FR price D-1 (mean, min, max)": ["price_d1_mean", "price_d1_min", "price_d1_max"],
@@ -39,14 +38,14 @@ GROUPS = {
 
 
 def shap_values() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Valeurs SHAP (heures du test × groupes de features) et lignes correspondantes du jeu."""
+    """SHAP values (test hours × feature groups) and the matching dataset rows."""
     f = add_features(load_dataset())
     start, end = (pd.Timestamp(d, tz=TZ) for d in PERIODS["test"])
     X, y = get_X(f, STEP), get_y(f, STEP)
     train = (f["time_local"] < start) & y.notna()
     test = (f["time_local"] >= start) & (f["time_local"] < end) & f["price_da"].notna()
     model = lgb.LGBMRegressor(**LGB_PARAMS).fit(X[train], y[train])
-    contrib = model.predict(X[test], pred_contrib=True)[:, :-1]   # dernière colonne : constante
+    contrib = model.predict(X[test], pred_contrib=True)[:, :-1]   # last column: constant
     shap = pd.DataFrame(contrib, index=f.index[test], columns=X.columns)
     grouped = pd.DataFrame({g: shap[cols].sum(axis=1) for g, cols in GROUPS.items()})
     return grouped, f.loc[test]
@@ -55,8 +54,8 @@ def shap_values() -> tuple[pd.DataFrame, pd.DataFrame]:
 def main():
     shap, rows = shap_values()
     mag = shap.abs()
-    reg = regime(rows).map({"negatif": "Negative hours", "pointe_soir": "Evening peak (18-22h)",
-                            "reste": "Other hours"})
+    reg = regime(rows).map({"negative": "Negative hours", "evening_peak": "Evening peak (18-22h)",
+                            "other": "Other hours"})
     hour = rows["time_local"].dt.hour
 
     overall = mag.mean().sort_values(ascending=False).rename("mean_abs_shap")
@@ -64,12 +63,12 @@ def main():
     by_hour = mag.groupby(hour.to_numpy()).mean().T
 
     RESULTS.mkdir(exist_ok=True)
-    overall.round(3).to_csv(RESULTS / "importance_globale.csv")
-    by_regime.round(3).to_csv(RESULTS / "importance_par_regime.csv")
-    by_hour.round(3).to_csv(RESULTS / "importance_par_heure.csv")
+    overall.round(3).to_csv(RESULTS / "importance_overall.csv")
+    by_regime.round(3).to_csv(RESULTS / "importance_by_regime.csv")
+    by_hour.round(3).to_csv(RESULTS / "importance_by_hour.csv")
     with pd.option_context("display.width", 140, "display.float_format", "{:.2f}".format):
-        print("Importance moyenne |SHAP| (€/MWh), test :\n", overall)
-        print("\nPar régime :\n", by_regime.loc[overall.index])
+        print("Mean |SHAP| importance (€/MWh), test:\n", overall)
+        print("\nBy regime:\n", by_regime.loc[overall.index])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
-"""Rapport PDF (report.pdf) construit à partir de results/ : tableaux lus dans les CSV, figures PNG.
+"""PDF report (report.pdf) built from results/: tables read from the CSV files, PNG figures.
 
-Texte en anglais, comme le README. Usage : python -m src.report   (après src.figures)
+Usage: python -m src.report   (after src.figures)
 """
 from pathlib import Path
 
@@ -20,7 +20,7 @@ from src.config import ROOT, RESULTS
 OUT = ROOT / "report.pdf"
 FIG = RESULTS / "figures"
 
-# Police Unicode (€, −, ×, →) si disponible, sinon Helvetica
+# Unicode font (€, −, ×, →) if available, otherwise Helvetica
 FONT, FONT_BOLD = "Helvetica", "Helvetica-Bold"
 _SUP = Path("/System/Library/Fonts/Supplemental")
 if (_SUP / "Arial Unicode.ttf").exists() and (_SUP / "Arial Bold.ttf").exists():
@@ -30,7 +30,7 @@ if (_SUP / "Arial Unicode.ttf").exists() and (_SUP / "Arial Bold.ttf").exists():
     if (_SUP / "Arial Italic.ttf").exists():
         pdfmetrics.registerFont(TTFont("ArialI", str(_SUP / "Arial Italic.ttf")))
         italic = "ArialI"
-    # Famille : nécessaire pour que <b> et <i> dans les paragraphes changent vraiment de police
+    # Font family: needed for <b> and <i> in paragraphs to actually change the font
     from reportlab.pdfbase.pdfmetrics import registerFontFamily
     registerFontFamily("ArialU", normal="ArialU", bold="ArialB", italic=italic, boldItalic="ArialB")
     FONT, FONT_BOLD = "ArialU", "ArialB"
@@ -51,39 +51,39 @@ S = {
 
 NAMES = {
     "naive_d1": "Naive D-1", "naive_d7": "Naive D-7", "A1": "A1: calendar", "A2": "A2: + price lags",
-    "B1": "B1: + FR fundamentals", "B2": "B2: + gas, CO2, Germany", "B2_brut": "B2, raw-price target",
+    "B1": "B1: + FR fundamentals", "B2": "B2: + gas, CO2, Germany", "B2_raw": "B2, raw-price target",
     "B2_rl": "B2, residual-load-weighted target",
-    "B1_hebdo": "B1, weekly retraining", "B2_hebdo": "B2, weekly retraining",
-    "B2_quotidien": "B2, daily retraining (main)", "B2_rl_hebdo": "B2 weighted target, weekly",
-    "B2_brut_hebdo": "B2 raw target, weekly", "MSTL": "MSTL", "LEAR_mensuel": "LEAR, monthly",
-    "LEAR_hebdo": "LEAR, weekly", "LEAR_quotidien": "LEAR, daily",
-    "Chronos2_prix": "Chronos-2, prices only", "Chronos2_fond": "Chronos-2 + fundamentals",
-    # Extension post-test
-    "B2_hebdo_hl90": "B2 weekly + recency (90 d)", "B2_hebdo_hl180": "B2 weekly + recency (180 d)",
-    "B2_hebdo_hl365": "B2 weekly + recency (365 d)", "B2_hebdo_corr": "B2 weekly + error correction",
-    "B2_hebdo_hl90_corr": "B2 weekly + recency + correction",
-    "B2_quotidien_corr": "B2 daily + error correction", "B3_hebdo": "B3 weekly (day shape, regime)",
-    "B3_hebdo_hl90": "B3 weekly + recency", "B3_hebdo_corr": "B3 weekly + error correction",
-    "B3_hebdo_hl90_corr": "B3 weekly + recency + correction",
-    "B3_quotidien_corr": "B3 daily + error correction",
-    "B3_quotidien_hl90_corr": "B3 daily + recency + correction (final)",
+    "B1_weekly": "B1, weekly retraining", "B2_weekly": "B2, weekly retraining",
+    "B2_daily": "B2, daily retraining (main)", "B2_rl_weekly": "B2 weighted target, weekly",
+    "B2_raw_weekly": "B2 raw target, weekly", "MSTL": "MSTL", "LEAR_monthly": "LEAR, monthly",
+    "LEAR_weekly": "LEAR, weekly", "LEAR_daily": "LEAR, daily",
+    "Chronos2_prices": "Chronos-2, prices only", "Chronos2_fund": "Chronos-2 + fundamentals",
+    # Post-test extension
+    "B2_weekly_hl90": "B2 weekly + recency (90 d)", "B2_weekly_hl180": "B2 weekly + recency (180 d)",
+    "B2_weekly_hl365": "B2 weekly + recency (365 d)", "B2_weekly_corr": "B2 weekly + error correction",
+    "B2_weekly_hl90_corr": "B2 weekly + recency + correction",
+    "B2_daily_corr": "B2 daily + error correction", "B3_weekly": "B3 weekly (day shape, regime)",
+    "B3_weekly_hl90": "B3 weekly + recency", "B3_weekly_corr": "B3 weekly + error correction",
+    "B3_weekly_hl90_corr": "B3 weekly + recency + correction",
+    "B3_daily_corr": "B3 daily + error correction",
+    "B3_daily_hl90_corr": "B3 daily + recency + correction (final)",
 }
-EXTENSION = ["B2_quotidien", "B2_quotidien_corr", "B2_hebdo", "B2_hebdo_corr", "B2_hebdo_hl90",
-             "B2_hebdo_hl90_corr", "B3_hebdo", "B3_hebdo_corr", "B3_hebdo_hl90", "B3_hebdo_hl90_corr",
-             "B3_quotidien_corr", "B3_quotidien_hl90_corr", "Chronos2_fond"]
+EXTENSION = ["B2_daily", "B2_daily_corr", "B2_weekly", "B2_weekly_corr", "B2_weekly_hl90",
+             "B2_weekly_hl90_corr", "B3_weekly", "B3_weekly_corr", "B3_weekly_hl90", "B3_weekly_hl90_corr",
+             "B3_daily_corr", "B3_daily_hl90_corr", "Chronos2_fund"]
 
 
 def extension_table():
-    """Validation et test côte à côte pour les variantes de l'extension post-test."""
+    """Validation and test side by side for the variants of the post-test extension."""
     v = pd.read_csv(RESULTS / "metrics_validation.csv", header=[0, 1], index_col=0)
     t = pd.read_csv(RESULTS / "metrics_test.csv", header=[0, 1], index_col=0)
     fmt = lambda m, name, reg: f"{m.loc[name, (reg, 'MAE')]:.2f}" if name in m.index else "n/a"
     rows = [["Model", "Valid. MAE", "Valid. negative", "Test MAE", "Test negative", "Test evening peak"]]
     hl = []
     for name in EXTENSION:
-        rows.append([NAMES[name], fmt(v, name, "toutes"), fmt(v, name, "negatif"), fmt(t, name, "toutes"),
-                     fmt(t, name, "negatif"), fmt(t, name, "pointe_soir")])
-        if name in ("B3_quotidien_hl90_corr", "B3_quotidien_corr"):
+        rows.append([NAMES[name], fmt(v, name, "all"), fmt(v, name, "negative"), fmt(t, name, "all"),
+                     fmt(t, name, "negative"), fmt(t, name, "evening_peak")])
+        if name in ("B3_daily_hl90_corr", "B3_daily_corr"):
             hl.append(len(rows) - 1)
     return table(rows, [5.6 * cm] + [2.2 * cm] * 5, highlight=hl)
 
@@ -123,17 +123,17 @@ def metrics_table(period, order):
     m = pd.read_csv(RESULTS / f"metrics_{period}.csv", header=[0, 1], index_col=0)
     rows = [["Model", "MAE all", "rMAE", "MAE negative", "MAE evening peak", "MAE other"]]
     hl = []
-    ref = m.loc["naive_d7", ("toutes", "MAE")]
+    ref = m.loc["naive_d7", ("all", "MAE")]
     for name in [o for o in order if o in m.index]:
         r = m.loc[name]
-        # rMAE recalculé depuis les MAE (le CSV est arrondi à 3 décimales : éviter un double arrondi)
-        rows.append([NAMES.get(name, name), f"{r[('toutes', 'MAE')]:.2f}", f"{r[('toutes', 'MAE')] / ref:.2f}",
-                     f"{r[('negatif', 'MAE')]:.2f}", f"{r[('pointe_soir', 'MAE')]:.2f}", f"{r[('reste', 'MAE')]:.2f}"])
-        if name in ("B2_quotidien", "Chronos2_fond"):
+        # rMAE recomputed from the MAEs (the CSV is rounded to 3 decimals: avoid double rounding)
+        rows.append([NAMES.get(name, name), f"{r[('all', 'MAE')]:.2f}", f"{r[('all', 'MAE')] / ref:.2f}",
+                     f"{r[('negative', 'MAE')]:.2f}", f"{r[('evening_peak', 'MAE')]:.2f}", f"{r[('other', 'MAE')]:.2f}"])
+        if name in ("B2_daily", "Chronos2_fund"):
             hl.append(len(rows) - 1)
-    hours = m.xs("heures", axis=1, level=1).iloc[0].astype(int)
-    note = (f"{hours['toutes']:,} hours, of which {hours['negatif']} negative-price hours and "
-            f"{hours['pointe_soir']:,} evening-peak hours. MAE in €/MWh; rMAE = MAE / MAE of naive D-7.")
+    hours = m.xs("hours", axis=1, level=1).iloc[0].astype(int)
+    note = (f"{hours['all']:,} hours, of which {hours['negative']} negative-price hours and "
+            f"{hours['evening_peak']:,} evening-peak hours. MAE in €/MWh; rMAE = MAE / MAE of naive D-7.")
     return table(rows, [5.6 * cm] + [2.2 * cm] * 5, highlight=hl), note
 
 
@@ -142,14 +142,14 @@ def dm_table(period):
     rows = [["Comparison (A vs B)", "MAE gap A − B (€/MWh)", "HAC t-stat", "p-value"]]
     for pair, r in d.iterrows():
         a, b = pair.split(" vs ")
-        rows.append([f"{NAMES.get(a, a)} vs {NAMES.get(b, b)}", f"{r.ecart_MAE:+.2f}",
+        rows.append([f"{NAMES.get(a, a)} vs {NAMES.get(b, b)}", f"{r.MAE_gap:+.2f}",
                      f"{r.t_HAC:+.2f}", "< 0.001" if r.p_value < 0.001 else f"{r.p_value:.3f}"])
     return table(rows, [9 * cm, 3.4 * cm, 2.3 * cm, 2.3 * cm])
 
 
-ORDER = ["naive_d1", "naive_d7", "MSTL", "LEAR_mensuel", "LEAR_hebdo", "LEAR_quotidien",
-         "Chronos2_prix", "A1", "A2", "B1", "B2", "B2_brut", "B2_rl", "B1_hebdo", "B2_hebdo",
-         "B2_rl_hebdo", "B2_brut_hebdo", "B2_quotidien", "Chronos2_fond"]
+ORDER = ["naive_d1", "naive_d7", "MSTL", "LEAR_monthly", "LEAR_weekly", "LEAR_daily",
+         "Chronos2_prices", "A1", "A2", "B1", "B2", "B2_raw", "B2_rl", "B1_weekly", "B2_weekly",
+         "B2_rl_weekly", "B2_raw_weekly", "B2_daily", "Chronos2_fund"]
 
 
 def build():
@@ -160,7 +160,7 @@ def build():
         Spacer(1, 10),
     ]
 
-    # ---------------------------------------------------------------- résumé
+    # ---------------------------------------------------------------- summary
     story += [P("Summary", "h1"), P(
         "We forecast the hourly French day-ahead (SDAC) price using only information published before the "
         "auction closes at 12:00 on D-1. A single gradient-boosting model (LightGBM) receives market information "
@@ -172,7 +172,8 @@ def build():
     story += bullets([
         "The main model (B2, retrained daily) reaches an MAE of <b>17.3 €/MWh</b> on the test year, "
         "44 % of the naive D-7 error, and beats LEAR by 3.2 €/MWh (p < 0.001).",
-        "Fundamentals cut the error by 17–18 % beyond price lags, and by 27 % on negative-price hours (validation).",
+        "Fundamentals cut the error by 17–18 % beyond price lags. On negative-price hours the gain is 27 % on "
+        "validation but only 13 % on the test year.",
         "Retraining daily instead of monthly is worth 2.5 €/MWh on the test year: model freshness is a first-order choice.",
         "Normalising the target by the SRMC is insurance: no effect in calm years, −17 % error in the 2021–2022 gas crisis.",
         "Chronos-2, zero-shot but given the same fundamentals, does better still (14.4 €/MWh, p < 0.001), "
@@ -182,7 +183,7 @@ def build():
         "(p = 0.007).",
     ])
 
-    # ---------------------------------------------------------------- données
+    # ---------------------------------------------------------------- data
     story += [P("1. Data and information set", "h1"), P(
         "Every input for delivery day D must be known before 12:00 (Paris time) on D-1. No realised data "
         "(actual generation, physical flows) is used. The dataset covers 1 Oct. 2018, when the German-"
@@ -203,7 +204,7 @@ def build():
         "day D is unchanged. Test days include clock changes and Easter. A deliberately planted leak makes the "
         "test fail.")]
 
-    # ---------------------------------------------------------------- méthode
+    # ---------------------------------------------------------------- method
     story += [P("2. Method", "h1"), P("2.1 Features and ablation steps", "h2"), table([
         ["Step", "Features added", "Target"],
         ["A1", "hour, weekday, month, French holidays, bridge days, clock-change days", "price"],
@@ -239,7 +240,7 @@ def build():
         "floor(4 (T/100)<super>2/9</super>) = 5 lags for T = 365 days, and p-values come from the normal "
         "distribution. Comparison pairs were fixed before the runs, except where stated.")]
 
-    # ---------------------------------------------------------------- résultats
+    # ---------------------------------------------------------------- results
     story += [PageBreak(), P("3. Results", "h1"), P("3.1 Test year (Nov. 2025 – Oct. 2026)", "h2")]
     t, note = metrics_table("test", ORDER)
     story += [t, P(note, "caption"),
@@ -248,11 +249,14 @@ def build():
     t, note = metrics_table("validation", ORDER)
     story += [t, P(note + " Chronos-2 not run on validation (possible contamination).", "caption")]
     story += [P("3.3 Gas crisis (Jul. 2021 – Dec. 2022), monthly retraining", "h2")]
-    t, note = metrics_table("crise", ["naive_d1", "naive_d7", "B2", "B2_brut", "B2_rl"])
+    t, note = metrics_table("crisis", ["naive_d1", "naive_d7", "B2", "B2_raw", "B2_rl"])
     story += [t, P(note, "caption"), P(
         "Normalising the target by the SRMC cuts the error by 17 % during the crisis, and the gain grows with "
         "the gas price (16 €/MWh in Q3 2022, when TTF averaged 202 €/MWh). Weighting the normalisation by residual "
-        "load does not improve on full normalisation in any period.")]
+        "load does not improve on full normalisation in any period. On the test year's negative-price hours, "
+        "however, the raw-price target does better than the normalised one (17.7 against 20.7 €/MWh with monthly "
+        "retraining, 17.4 against 18.8 with weekly retraining), while the two are level on validation. This is "
+        "consistent with gas not setting the price when it is negative: subtracting the gas cost then adds noise.")]
     story += [figure("03_retraining.png", 15, "Figure 2. Effect of retraining frequency on overall MAE.")]
     story += [P("3.4 Statistical tests", "h2"), P("<b>Test year</b>", "body"), dm_table("test"),
               Spacer(1, 6), P("<b>Validation year</b>", "body"), dm_table("validation"),
@@ -261,7 +265,7 @@ def build():
                 "slightly optimistic.", "caption")]
     story += [figure("04_test_week.png", 16, "Figure 3. One test week: actual price and three forecasts.")]
 
-    # ---------------------------------------------------------------- extension post-test
+    # ---------------------------------------------------------------- post-test extension
     story += [P("3.5 Post-test extension: borrowing from Chronos-2", "h2"), P(
         "After seeing Chronos-2 win on the test year, we tried to give LightGBM the ingredients that probably "
         "explain its edge. Each idea was developed and chosen on the validation year, then run once on the test "
@@ -382,7 +386,7 @@ def build():
                             title="Forecasting French day-ahead power prices", author="",
                             subject="Day-ahead price forecasting, ablation and benchmarks")
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
-    print(f"Écrit : {OUT}")
+    print(f"Written: {OUT}")
 
 
 if __name__ == "__main__":

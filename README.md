@@ -42,7 +42,7 @@ reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
 
 | Hypothesis (set before modelling) | Verdict |
 |---|---|
-| Fundamentals, above all residual load, bring most of the gain beyond price lags, especially on negative-price hours and peaks. | **Confirmed.** Adding French fundamentals cuts the error by 17 % (validation) to 18 % (test); on negative hours by 27 % (validation). |
+| Fundamentals, above all residual load, bring most of the gain beyond price lags, especially on negative-price hours and peaks. | **Confirmed.** Adding French fundamentals cuts the error by 17 % (validation) to 18 % (test); on negative hours by 27 % on validation but only 13 % on the test. |
 | At a one-day horizon, gas and CO₂ add little in a stable regime but matter as a *scale* when prices change regime, hence normalising the target by the gas-plant cost (SRMC). | **Confirmed.** Normalising changes nothing in calm years (p = 0.73) but cuts the error by 17 % in the 2021–2022 gas crisis (p < 0.001). |
 | A "universal" model that only sees past prices (MSTL, Chronos) stays below the model with fundamentals. | **True for price-only models, false once the foundation model gets the fundamentals.** |
 
@@ -141,6 +141,7 @@ LEAR, whose short windows go stale, collapses when re-estimated only monthly.
 **Normalising by the gas-plant cost is insurance, not a free lunch.**
 - **Crisis (Jul. 2021 – Dec. 2022):** predicting price − SRMC instead of the raw price cuts B2's error from 38.0 to 31.4 €/MWh (p < 0.001). The gain grows with the gas price, reaching 16 €/MWh in Q3 2022.
 - **Calm years:** it makes no difference (validation p = 0.73; test +0.47, p = 0.09).
+- **Negative-price hours are the exception:** on the test year, the raw-price target does better than the normalised one on negative hours (17.7 vs 20.7 €/MWh with monthly retraining, 17.4 vs 18.8 with weekly retraining); the two are level on validation. When the price is negative, gas is not setting it, so subtracting the gas cost adds noise rather than removing it.
 - **Weighting by residual load:** the pass-through of gas cost to the French price varies with residual load, from 0.7 to 1.2. Weighting the normalisation by it adds nothing on any period (p = 0.61 to 0.74): LightGBM already learns that interaction.
 
 **A test week.** The models track the daily profile closely. Chronos-2 is closest on most days but
@@ -218,8 +219,8 @@ The merit-order picture behind these results:
 
 ## Market takeaways
 
-1. **Fundamentals beat history, especially when prices go negative.** Residual load forecasts cut the error by about a fifth on top of price lags, and by a quarter on negative-price hours.
-2. **Gas increasingly fails to set the French price.** The average spread between price and CCGT cost went from +1–6 €/MWh (2018–2022) to −35 €/MWh (2024–2026), as nuclear recovered and solar grew. Normalising by gas cost protects against fuel shocks, but tells less and less about everyday prices.
+1. **Fundamentals beat history, especially when prices go negative.** Residual load forecasts cut the error by about a fifth on top of price lags. On negative-price hours the gain was a quarter on validation but only 13 % on the test year, so it is less stable than the overall gain.
+2. **Gas increasingly fails to set the French price.** The average spread between price and CCGT cost went from +1–6 €/MWh (2018–2022) to −35 €/MWh (2024–2026), as nuclear recovered and solar grew. Normalising by gas cost protects against fuel shocks, but tells less and less about everyday prices, and on the test year it even hurt on negative-price hours, where gas plays no role.
 3. **Model freshness is a first-order choice.** Retraining daily instead of monthly is worth 2.5 €/MWh on the test year and costs about 8 seconds a day in production.
 4. **Linear models are competitive in normal hours; non-linearity earns its keep around renewables thresholds.** With the same information and cadence, LightGBM beats LEAR on the test (p = 0.01). Its edge is largest on negative-price hours (19.6 vs 24.7 €/MWh), while LEAR is as good or better at the evening peak.
 5. **In-context foundation models are a serious contender.** Fed the same fundamentals, a zero-shot model beat a tuned gradient-boosting model by 16 %. It adapts to the latest weeks of data at every forecast, but it can overshoot extreme renewables hours.
@@ -251,12 +252,12 @@ cp .env.example .env                     # add your ENTSO-E API key
 python -m src.get_data                   # ENTSO-E, TTF and EUA -> data/processed/dataset_hourly.parquet
 python -m pytest                         # leakage tests
 python -m src.backtest                   # validation year
-python -m src.backtest --period crise    # 2021-2022 gas crisis
+python -m src.backtest --period crisis   # 2021-2022 gas crisis
 python -m src.backtest --period test     # test year, run once (about 3 to 4 hours on a laptop CPU)
-python -m src.backtest --period rodage --models B3_hebdo_hl90   # error history before validation
-python -m src.correction --base B3_hebdo_hl90 --period validation --history rodage
-python -m src.backtest --period test --models B3_quotidien_hl90   # final model, retrained daily
-python -m src.correction --base B3_quotidien_hl90 --period test --history validation
+python -m src.backtest --period burn_in --models B3_weekly_hl90   # error history before validation
+python -m src.correction --base B3_weekly_hl90 --period validation --history burn_in
+python -m src.backtest --period test --models B3_daily_hl90   # final model, retrained daily
+python -m src.correction --base B3_daily_hl90 --period test --history validation
 python -m src.importance                 # SHAP importance
 python -m src.figures                    # figures
 python -m src.report                     # report.pdf

@@ -1,9 +1,9 @@
-"""Figures du README et du rapport (results/figures/*.png).
+"""README and report figures (results/figures/*.png).
 
-Libellés en anglais (README et rapport en anglais). Palette catégorielle de référence, ordre fixe :
-bleu = modèle principal (B2 quotidien), orange = Chronos-2, vert d'eau = LEAR ; prix réalisé en noir.
+Reference categorical palette, fixed order: blue = main model (B2 daily), orange = Chronos-2,
+aqua = LEAR, yellow = final extension model; actual price in black.
 
-Usage : python -m src.figures   (après src.backtest --period test et src.importance)
+Usage: python -m src.figures   (after src.backtest --period test and src.importance)
 """
 import matplotlib
 
@@ -20,19 +20,19 @@ from src import importance
 
 FIG = RESULTS / "figures"
 
-# Palette (instance de référence, mode clair)
+# Palette (reference instance, light mode)
 SURFACE, INK, INK_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 BLUE, ORANGE, AQUA, YELLOW, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#b9b8b2"
-MODEL_COLORS = {"B2_quotidien": BLUE, "Chronos2_fond": ORANGE, "LEAR_quotidien": AQUA,
-                "B3_quotidien_hl90_corr": YELLOW}
+MODEL_COLORS = {"B2_daily": BLUE, "Chronos2_fund": ORANGE, "LEAR_daily": AQUA,
+                "B3_daily_hl90_corr": YELLOW}
 
 LABELS = {
     "naive_d7": "Naive D-7", "naive_d1": "Naive D-1", "A1": "A1 calendar", "A2": "A2 + price lags",
-    "B1": "B1 + FR fundamentals", "B2": "B2 + gas, CO2, DE", "B2_quotidien": "B2, daily retraining",
-    "B2_hebdo": "B2, weekly retraining", "MSTL": "MSTL", "LEAR_quotidien": "LEAR (daily)",
-    "Chronos2_prix": "Chronos-2, prices only", "Chronos2_fond": "Chronos-2 + fundamentals",
-    "B2_quotidien_corr": "B2 daily + error correction*",
-    "B3_quotidien_hl90_corr": "B3 daily + recency + correction*",
+    "B1": "B1 + FR fundamentals", "B2": "B2 + gas, CO2, DE", "B2_daily": "B2, daily retraining",
+    "B2_weekly": "B2, weekly retraining", "MSTL": "MSTL", "LEAR_daily": "LEAR (daily)",
+    "Chronos2_prices": "Chronos-2, prices only", "Chronos2_fund": "Chronos-2 + fundamentals",
+    "B2_daily_corr": "B2 daily + error correction*",
+    "B3_daily_hl90_corr": "B3 daily + recency + correction*",
 }
 
 plt.rcParams.update({
@@ -54,7 +54,7 @@ def _save(fig, name):
 
 # --------------------------------------------------------------------- 1. merit order
 def fig_merit_order(f):
-    """Prix en fonction de la charge résiduelle prévue, 2024-2026, avec le SRMC médian."""
+    """Price against forecast residual load, 2024-2026, with the median SRMC."""
     d = f[f["time_local"] >= pd.Timestamp("2024-01-01", tz=TZ)].dropna(subset=["fr_residual_fc", "price_da"])
     x, y = d["fr_residual_fc"] / 1000, d["price_da"].clip(-100, 300)
     fig, ax = plt.subplots(figsize=(8, 4.6))
@@ -72,16 +72,16 @@ def fig_merit_order(f):
     _save(fig, "01_merit_order.png")
 
 
-# --------------------------------------------------------------------- 2. résultats du test
+# --------------------------------------------------------------------- 2. test results
 def fig_results(f, preds):
-    models = ["naive_d7", "MSTL", "LEAR_quotidien", "Chronos2_prix", "A2", "B1", "B2",
-              "B2_hebdo", "B2_quotidien", "B2_quotidien_corr", "B3_quotidien_hl90_corr", "Chronos2_fond"]
+    models = ["naive_d7", "MSTL", "LEAR_daily", "Chronos2_prices", "A2", "B1", "B2",
+              "B2_weekly", "B2_daily", "B2_daily_corr", "B3_daily_hl90_corr", "Chronos2_fund"]
     rows = f.loc[preds.index]
     ok = preds[models].notna().all(axis=1) & rows["price_da"].notna()
     err = preds.loc[ok, models].sub(rows.loc[ok, "price_da"], axis=0).abs()
     reg = regime(rows[ok])
-    panels = [("All hours", slice(None)), ("Negative-price hours", reg == "negatif"),
-              ("Evening peak (18-22h)", reg == "pointe_soir"), ("Other hours", reg == "reste")]
+    panels = [("All hours", slice(None)), ("Negative-price hours", reg == "negative"),
+              ("Evening peak (18-22h)", reg == "evening_peak"), ("Other hours", reg == "other")]
     fig, axes = plt.subplots(1, 4, figsize=(13, 4.9), sharey=True)
     for ax, (title, m) in zip(axes, panels):
         mae = err[m].mean()
@@ -101,13 +101,13 @@ def fig_results(f, preds):
     _save(fig, "02_test_results.png")
 
 
-# --------------------------------------------------------------------- 3. rythme de réentraînement
+# --------------------------------------------------------------------- 3. retraining pace
 def fig_retraining():
     rows = []
     for period in ("validation", "test"):
-        m = pd.read_csv(RESULTS / f"metrics_{period}.csv", header=[0, 1], index_col=0)[("toutes", "MAE")]
-        for fam, names in {"LightGBM B2": ["B2", "B2_hebdo", "B2_quotidien"],
-                           "LEAR": ["LEAR_mensuel", "LEAR_hebdo", "LEAR_quotidien"]}.items():
+        m = pd.read_csv(RESULTS / f"metrics_{period}.csv", header=[0, 1], index_col=0)[("all", "MAE")]
+        for fam, names in {"LightGBM B2": ["B2", "B2_weekly", "B2_daily"],
+                           "LEAR": ["LEAR_monthly", "LEAR_weekly", "LEAR_daily"]}.items():
             rows += [(period, fam, freq, m[n]) for freq, n in zip(["Monthly", "Weekly", "Daily"], names)]
     d = pd.DataFrame(rows, columns=["period", "model", "freq", "mae"])
     fig, axes = plt.subplots(1, 2, figsize=(9, 3.8), sharey=True)
@@ -126,14 +126,14 @@ def fig_retraining():
     _save(fig, "03_retraining.png")
 
 
-# --------------------------------------------------------------------- 4. une semaine de test
+# --------------------------------------------------------------------- 4. one test week
 def fig_week(f, preds, start="2026-05-04"):
     a, b = pd.Timestamp(start, tz=TZ), pd.Timestamp(start, tz=TZ) + pd.Timedelta(days=7)
     m = (f["time_local"] >= a) & (f["time_local"] < b)
     t = f.loc[m, "time_local"]
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t, f.loc[m, "price_da"], color=INK, lw=2.4, label="Actual price")
-    for mo in ["B2_quotidien", "Chronos2_fond", "LEAR_quotidien"]:
+    for mo in ["B2_daily", "Chronos2_fund", "LEAR_daily"]:
         ax.plot(t, preds.loc[f.index[m], mo], color=MODEL_COLORS[mo], lw=1.6, label=LABELS[mo])
     ax.axhline(0, color=INK_2, lw=0.8)
     ax.set_ylabel("€/MWh")
@@ -161,7 +161,7 @@ def fig_importance():
     _save(fig, "05_importance.png")
 
     order = overall.index[::-1]
-    reg = regime(rows).map({"negatif": "Negative\nhours", "pointe_soir": "Evening\npeak", "reste": "Other\nhours"})
+    reg = regime(rows).map({"negative": "Negative\nhours", "evening_peak": "Evening\npeak", "other": "Other\nhours"})
     by_reg = mag.groupby(reg.to_numpy()).mean().T.loc[order, ["Negative\nhours", "Evening\npeak", "Other\nhours"]]
     by_hour = mag.groupby(rows["time_local"].dt.hour.to_numpy()).mean().T.loc[order]
     share_reg = by_reg / by_reg.sum()
@@ -189,7 +189,7 @@ def fig_importance():
 def main():
     f = add_features(load_dataset())
     preds = load_predictions("test")
-    for name, col in NAIVE.items():   # les naïfs ne sont pas sauvés : ce sont des features
+    for name, col in NAIVE.items():   # naive forecasts are not saved: they are features
         preds[name] = f.loc[preds.index, col]
     fig_merit_order(f)
     fig_results(f, preds)

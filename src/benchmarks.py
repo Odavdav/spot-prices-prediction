@@ -1,23 +1,23 @@
-"""Benchmarks : MSTL (séries temporelles classiques) et LEAR (référence linéaire de la littérature).
+"""Benchmarks: MSTL (classical time series), LEAR (linear benchmark from the literature) and Chronos-2.
 
-Les naïfs J-1 et J-7 sont directement les features price_d1 et price_d7 (voir backtest.py).
+The naive D-1 and D-7 forecasts are simply the features price_d1 and price_d7 (see backtest.py).
 
-MSTL — prix seul. Décompose les 8 dernières semaines de prix horaires en tendance + saisonnalité
-journalière (24 h) + hebdomadaire (168 h) + reste, puis prolonge chaque composante. Réestimé chaque
-jour : sans entrée exogène, un modèle figé un mois ne verrait pas les prix récents.
+MSTL — prices only. Decomposes the last 8 weeks of hourly prices into trend + daily (24 h) and
+weekly (168 h) seasonality + remainder, then extends each component. Re-estimated every day:
+with no exogenous input, a model frozen for a month would not see recent prices.
 
-LEAR — Lago, Marcjasz, De Schutter et Weron (2021), Applied Energy 293:116983. Régression linéaire
-pénalisée (LASSO, pénalité choisie par AIC), un modèle par heure de livraison. Entrées pour le jour J :
-prix des 24 heures de J-1, J-2, J-3 et J-7, prévisions de conso et d'ENR françaises pour J, J-1 et
-J-7, jour de la semaine. Prix et entrées transformés par asinh après centrage-réduction robuste
-(médiane, MAD). Prévision = moyenne des modèles calibrés sur 56, 84, 1092 et 1456 jours.
-Mêmes informations que la marche B1 (calendrier, lags de prix, fondamentaux FR), sans gaz ni DE.
+LEAR — Lago, Marcjasz, De Schutter and Weron (2021), Applied Energy 293:116983. Penalised linear
+regression (LASSO, penalty chosen by AIC), one model per delivery hour. Inputs for day D: prices of
+the 24 hours of D-1, D-2, D-3 and D-7, French load and renewables forecasts for D, D-1 and D-7, day
+of the week. Prices and inputs are transformed by asinh after robust scaling (median, MAD).
+Forecast = mean of the models calibrated on 56, 84, 1092 and 1456 days.
+Same information as step B1 (calendar, price lags, FR fundamentals), without gas or DE.
 
-Écarts à l'original, à documenter :
-- Fenêtres courtes (56 et 84 j < 247 entrées) : scikit-learn récent exige alors une estimation de la
-  variance du bruit pour l'AIC ; on reprend celle du modèle 1456 j à la même heure.
-- Version mensuelle en plus de la version quotidienne de l'article, pour comparer à LightGBM avec le
-  même rythme de réestimation.
+Departures from the original, to be documented:
+- Short windows (56 and 84 days < 247 inputs): recent scikit-learn then requires an estimate of
+  the noise variance for the AIC; the one of the 1456-day model at the same hour is reused.
+- Monthly and weekly versions in addition to the daily version of the paper, to compare with
+  LightGBM at the same re-estimation pace.
 """
 import time
 
@@ -28,25 +28,25 @@ from statsforecast.models import MSTL
 
 from src.config import TZ
 
-LEAR_WINDOWS = (1456, 1092, 84, 56)   # la plus longue d'abord : elle fournit la variance du bruit
+LEAR_WINDOWS = (1456, 1092, 84, 56)   # longest first: it provides the noise variance
 MSTL_WEEKS = 8
 
 
-# --------------------------------------------------------------------- outils
+# --------------------------------------------------------------------- helpers
 def _local_day_hour(f: pd.DataFrame):
     t = f["time_local"].dt.tz_convert(TZ)
     return t.dt.tz_localize(None).dt.normalize(), t.dt.hour
 
 
 def _daily_panel(values: pd.Series, day: pd.Series, hour: pd.Series, days: pd.DatetimeIndex) -> pd.DataFrame:
-    """Tableau jours × 24 heures locales. L'heure manquante (passage à l'heure d'été) est interpolée,
-    l'heure doublée (octobre) moyennée."""
+    """Days × 24 local hours table. The missing hour (spring DST change) is interpolated within
+    the day, the doubled hour (October) averaged."""
     panel = values.groupby([day, hour]).mean().unstack().reindex(index=days, columns=range(24))
     return panel.interpolate(axis=1, limit_direction="both")
 
 
 def _to_hourly(panel: pd.DataFrame, day: pd.Series, hour: pd.Series) -> np.ndarray:
-    """Repasse un tableau jours × heures sur l'index horaire."""
+    """Map a days × hours table back onto the hourly index."""
     stacked = panel.stack()
     return stacked.reindex(pd.MultiIndex.from_arrays([day, hour])).to_numpy()
 
@@ -57,7 +57,7 @@ def _period_days(start: str, end: str) -> pd.DatetimeIndex:
 
 # --------------------------------------------------------------------- MSTL
 def mstl_forecasts(f: pd.DataFrame, start: str, end: str) -> pd.Series:
-    """Prévision MSTL de chaque jour de [start, end), à partir des prix connus jusqu'à la fin de J-1."""
+    """MSTL forecast of each day of [start, end), from the prices known until the end of D-1."""
     price = f["price_da"]
     local = f["time_local"].dt.tz_convert(TZ)
     out = pd.Series(np.nan, index=f.index)
@@ -69,13 +69,13 @@ def mstl_forecasts(f: pd.DataFrame, start: str, end: str) -> pd.Series:
         target = f.index[((local >= day_start) & (local < day_end)).to_numpy()]
         fc = MSTL(season_length=[24, 168]).fit(history.to_numpy()).predict(h=len(target))["mean"]
         out[target] = fc
-    print(f"  MSTL : {len(_period_days(start, end))} jours en {time.time() - t0:.0f} s")
+    print(f"  MSTL: {len(_period_days(start, end))} days in {time.time() - t0:.0f} s")
     return out.loc[out.notna()].rename("MSTL")
 
 
 # --------------------------------------------------------------------- LEAR
 def _lear_design(f: pd.DataFrame):
-    """Matrice d'entrées LEAR (une ligne par jour de livraison) et cible jours × 24 heures."""
+    """LEAR input matrix (one row per delivery day) and days × 24 hours target."""
     day, hour = _local_day_hour(f)
     days = pd.date_range(day.min(), day.max(), freq="D")
     price = _daily_panel(f["price_da"], day, hour, days)
@@ -92,12 +92,12 @@ def _lear_design(f: pd.DataFrame):
     X.columns = [f"{b}_h{h}" for b, h in X.columns]
     dummies = pd.get_dummies(days.dayofweek, prefix="dow").astype(float)
     dummies.index = days
-    X = X.ffill()   # trous de prévision : on reprend la veille à la même heure
+    X = X.ffill()   # forecast gaps: carry the previous day at the same hour
     return X, dummies, price, day, hour
 
 
 def _robust_asinh(train: np.ndarray, apply: np.ndarray):
-    """Centrage-réduction par médiane et MAD (calculés sur `train`), puis asinh."""
+    """Scaling by median and MAD (computed on `train`), then asinh."""
     med = np.nanmedian(train, axis=0)
     mad = np.nanmedian(np.abs(train - med), axis=0) / 0.6745
     mad = np.where(mad > 0, mad, 1.0)
@@ -105,7 +105,7 @@ def _robust_asinh(train: np.ndarray, apply: np.ndarray):
 
 
 def _lear_fit_predict(X, dummies, price, fit_day, predict_days):
-    """Calibre les 4 fenêtres × 24 heures sur les jours < fit_day, prévoit `predict_days` (jours × 24)."""
+    """Calibrate the 4 windows × 24 hours on days < fit_day, forecast `predict_days` (days × 24)."""
     valid = X.notna().all(axis=1) & price.notna().all(axis=1)
     hist = valid.index[(valid.index < fit_day) & valid.to_numpy()]
     Xp_raw = X.loc[predict_days].to_numpy()
@@ -129,11 +129,11 @@ def _lear_fit_predict(X, dummies, price, fit_day, predict_days):
     return pd.DataFrame(np.mean(preds, axis=0), index=predict_days, columns=range(24))
 
 
-LEAR_NAMES = {"daily": "LEAR_quotidien", "weekly": "LEAR_hebdo", "monthly": "LEAR_mensuel"}
+LEAR_NAMES = {"daily": "LEAR_daily", "weekly": "LEAR_weekly", "monthly": "LEAR_monthly"}
 
 
 def lear_forecasts(f: pd.DataFrame, start: str, end: str, refit: str = "daily") -> pd.Series:
-    """Prévisions LEAR sur [start, end), réestimées chaque jour, semaine (7 j) ou mois."""
+    """LEAR forecasts on [start, end), re-estimated every day, week (7 days) or month."""
     X, dummies, price, day, hour = _lear_design(f)
     days = _period_days(start, end)
     t0 = time.time()
@@ -147,23 +147,23 @@ def lear_forecasts(f: pd.DataFrame, start: str, end: str, refit: str = "daily") 
     for i, (fit_day, predict_days) in enumerate(groups, 1):
         panels.append(_lear_fit_predict(X, dummies, price, fit_day, predict_days))
         if refit == "daily" and i % 30 == 0:
-            print(f"  LEAR quotidien : {i}/{len(groups)} jours ({time.time() - t0:.0f} s)")
+            print(f"  LEAR daily: {i}/{len(groups)} days ({time.time() - t0:.0f} s)")
     name = LEAR_NAMES[refit]
-    print(f"  {name} : {len(groups)} réestimations en {time.time() - t0:.0f} s")
+    print(f"  {name}: {len(groups)} re-estimations in {time.time() - t0:.0f} s")
     hourly = pd.Series(_to_hourly(pd.concat(panels), day, hour), index=f.index)
     return hourly.loc[hourly.notna()].rename(name)
 
 
 # --------------------------------------------------------------------- Chronos-2
-# Modèle de fondation zero-shot (Amazon, rapport technique arXiv 2510.15821 du 17/10/2025).
-# Sorti avant le début du test (01/11/2025) : il ne peut pas avoir vu le test. Il a pu voir la
-# validation (nov. 2024 -> oct. 2025) : ses résultats de validation sont indicatifs seulement.
+# Zero-shot foundation model (Amazon, technical report arXiv 2510.15821, 17 Oct. 2025).
+# Released before the start of the test year (2025-11-01): it cannot have seen the test. It may have
+# seen the validation year (Nov. 2024 -> Oct. 2025): it is therefore only run on the test year.
 CHRONOS_MODEL = "amazon/chronos-2"
-CHRONOS_CONTEXT = 2048     # heures d'historique (~12 semaines)
-# Variables connues à l'avance pour J (passées et futures), comme dans la marche B2
+CHRONOS_CONTEXT = 2048     # hours of history (~12 weeks)
+# Variables known in advance for D (past and future), as in step B2
 CHRONOS_KNOWN = ["fr_load_fc", "fr_wind_fc", "fr_solar_fc", "de_load_fc", "de_wind_fc",
                  "de_solar_fc", "srmc_ccgt", "is_holiday"]
-CHRONOS_PAST_ONLY = ["de_price_da"]   # connu jusqu'à J-1 seulement
+CHRONOS_PAST_ONLY = ["de_price_da"]   # only known until D-1
 
 _chronos_pipeline = None
 
@@ -171,15 +171,15 @@ _chronos_pipeline = None
 def _chronos():
     global _chronos_pipeline
     if _chronos_pipeline is None:
-        from chronos import Chronos2Pipeline   # import tardif : PyTorch seulement si on s'en sert
+        from chronos import Chronos2Pipeline   # late import: PyTorch only when it is used
         _chronos_pipeline = Chronos2Pipeline.from_pretrained(CHRONOS_MODEL, device_map="cpu")
     return _chronos_pipeline
 
 
 def chronos_forecasts(f: pd.DataFrame, start: str, end: str, covariates: bool) -> pd.Series:
-    """Médiane prédite par Chronos-2 pour chaque jour de [start, end), à partir des
-    CHRONOS_CONTEXT dernières heures connues à la fin de J-1 (et des variables connues pour J)."""
-    name = "Chronos2_fond" if covariates else "Chronos2_prix"
+    """Median forecast of Chronos-2 for each day of [start, end), from the last CHRONOS_CONTEXT
+    hours known at the end of D-1 (and the variables known for D)."""
+    name = "Chronos2_fund" if covariates else "Chronos2_prices"
     local = f["time_local"].dt.tz_convert(TZ)
     cols = CHRONOS_KNOWN + CHRONOS_PAST_ONLY
     cov = f[cols].interpolate(limit_direction="both").astype(float) if covariates else None
@@ -198,21 +198,21 @@ def chronos_forecasts(f: pd.DataFrame, start: str, end: str, covariates: bool) -
 
     out = pd.Series(np.nan, index=f.index)
     t0 = time.time()
-    for length in sorted({len(h) for h in targets}):   # 23, 24 ou 25 h (changements d'heure)
+    for length in sorted({len(h) for h in targets}):   # 23, 24 or 25 h (DST changes)
         idx = [i for i, h in enumerate(targets) if len(h) == length]
         quantiles, _ = _chronos().predict_quantiles([tasks[i] for i in idx], prediction_length=length,
                                                     quantile_levels=[0.5], batch_size=32)
         for i, q in zip(idx, quantiles):
             out.iloc[targets[i]] = q[0, :, 0].numpy()
-    print(f"  {name} : {len(tasks)} jours en {time.time() - t0:.0f} s")
+    print(f"  {name}: {len(tasks)} days in {time.time() - t0:.0f} s")
     return out.loc[out.notna()].rename(name)
 
 
 BENCHMARKS = {
-    "Chronos2_prix": lambda f, s, e: chronos_forecasts(f, s, e, covariates=False),
-    "Chronos2_fond": lambda f, s, e: chronos_forecasts(f, s, e, covariates=True),
+    "Chronos2_prices": lambda f, s, e: chronos_forecasts(f, s, e, covariates=False),
+    "Chronos2_fund": lambda f, s, e: chronos_forecasts(f, s, e, covariates=True),
     "MSTL": mstl_forecasts,
-    "LEAR_mensuel": lambda f, s, e: lear_forecasts(f, s, e, refit="monthly"),
-    "LEAR_hebdo": lambda f, s, e: lear_forecasts(f, s, e, refit="weekly"),
-    "LEAR_quotidien": lambda f, s, e: lear_forecasts(f, s, e, refit="daily"),
+    "LEAR_monthly": lambda f, s, e: lear_forecasts(f, s, e, refit="monthly"),
+    "LEAR_weekly": lambda f, s, e: lear_forecasts(f, s, e, refit="weekly"),
+    "LEAR_daily": lambda f, s, e: lear_forecasts(f, s, e, refit="daily"),
 }

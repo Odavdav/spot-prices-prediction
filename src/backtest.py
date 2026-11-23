@@ -1,14 +1,14 @@
-"""Backtest walk-forward mensuel et métriques.
+"""Walk-forward backtest and metrics.
 
-Protocole : pour chaque mois M de la période évaluée, le modèle est entraîné sur toutes les
-livraisons antérieures au 1er du mois (fenêtre expansive), puis prévoit chaque jour de M.
-Ne pas réentraîner en cours de mois est prudent : le 15, on aurait déjà les prix jusqu'au 14.
+Protocol: for each refit date of the evaluated period (by default the 1st of each month), the model
+is trained on every delivery before that date (expanding window), then forecasts every day until
+the next refit date. Weekly and daily retraining are variants (REFIT_VARIANTS).
 
-Métriques : MAE et rMAE (MAE / MAE du naïf J-7 sur les mêmes heures), par régime.
+Metrics: MAE and rMAE (MAE / MAE of the naive D-7 forecast on the same hours), by regime.
 
-Usage :
-    python -m src.backtest                    # validation (nov. 2024 -> oct. 2025)
-    python -m src.backtest --period test      # test : à ne lancer qu'à la fin du projet
+Usage:
+    python -m src.backtest                    # validation (Nov. 2024 -> Oct. 2025)
+    python -m src.backtest --period test      # test: only run at the end of the project
 """
 import argparse
 
@@ -21,9 +21,9 @@ from src.config import PERIODS, PREDICTIONS_DIR, RESULTS, SEED, TZ
 from src.data import load_dataset
 from src.features import STEPS, add_features, get_X, get_y, to_price
 
-# Hyperparamètres fixes, raisonnables pour ~50 000 lignes et ~30 features (pas de tuning à ce stade)
+# Fixed hyperparameters, reasonable for ~50,000 rows and ~30 features (no tuning)
 LGB_PARAMS = dict(
-    objective="l1",          # cohérent avec la MAE ; robuste aux pics de prix
+    objective="l1",          # consistent with the MAE; robust to price spikes
     n_estimators=800,
     learning_rate=0.03,
     num_leaves=63,
@@ -36,39 +36,39 @@ LGB_PARAMS = dict(
 )
 
 NAIVE = {"naive_d1": "price_d1", "naive_d7": "price_d7"}
-EVENING_PEAK = range(18, 22)  # 18h-21h59, heure locale
+EVENING_PEAK = range(18, 22)  # 18:00-21:59, local time
 
 
 # --------------------------------------------------------------------- walk-forward
 REFIT_FREQ = {"monthly": "MS", "weekly": "7D", "daily": "D"}
-REFIT_SUFFIX = {"weekly": "_hebdo", "daily": "_quotidien"}
-# Variantes LightGBM : nom -> (marche, rythme de réentraînement, demi-vie des poids de récence en jours)
-REFIT_VARIANTS = {"B1_hebdo": ("B1", "weekly", None), "B2_hebdo": ("B2", "weekly", None),
-                  "B2_quotidien": ("B2", "daily", None), "B2_rl_hebdo": ("B2_rl", "weekly", None),
-                  "B2_brut_hebdo": ("B2_brut", "weekly", None)}
-# Poids de récence : une ligne d'entraînement vieille de H jours pèse moitié moins (H à choisir en validation)
+REFIT_SUFFIX = {"weekly": "_weekly", "daily": "_daily"}
+# LightGBM variants: name -> (step, retraining pace, half-life of the recency weights in days)
+REFIT_VARIANTS = {"B1_weekly": ("B1", "weekly", None), "B2_weekly": ("B2", "weekly", None),
+                  "B2_daily": ("B2", "daily", None), "B2_rl_weekly": ("B2_rl", "weekly", None),
+                  "B2_raw_weekly": ("B2_raw", "weekly", None)}
+# Recency weights: a training row H days old weighs half as much (H chosen on validation)
 HALF_LIVES = (90, 180, 365)
-REFIT_VARIANTS.update({f"B2_hebdo_hl{h}": ("B2", "weekly", h) for h in HALF_LIVES})
-# B3 = B2 + forme de la journée + régime récent
-REFIT_VARIANTS.update({"B3_hebdo": ("B3", "weekly", None), "B3_hebdo_hl90": ("B3", "weekly", 90),
-                       "B3_quotidien": ("B3", "daily", None), "B3_quotidien_hl90": ("B3", "daily", 90)})
+REFIT_VARIANTS.update({f"B2_weekly_hl{h}": ("B2", "weekly", h) for h in HALF_LIVES})
+# B3 = B2 + shape of the day + current regime
+REFIT_VARIANTS.update({"B3_weekly": ("B3", "weekly", None), "B3_weekly_hl90": ("B3", "weekly", 90),
+                       "B3_daily": ("B3", "daily", None), "B3_daily_hl90": ("B3", "daily", 90)})
 
 
 def refit_dates(start: str, end: str, refit: str = "monthly") -> list:
-    """Dates de réentraînement : le 1er de chaque mois, tous les 7 jours, ou chaque jour depuis `start`."""
+    """Retraining dates: the 1st of each month, every 7 days, or every day from `start`."""
     return list(pd.date_range(start, end, freq=REFIT_FREQ[refit], tz=TZ, inclusive="left"))
 
 
 def recency_weights(times: pd.Series, refit_date: pd.Timestamp, half_life: float) -> np.ndarray:
-    """Poids 0,5^(âge / demi-vie), l'âge étant compté en jours avant la date de réentraînement."""
+    """Weights 0.5^(age / half-life), the age being counted in days before the retraining date."""
     age_days = (refit_date - times).dt.total_seconds().to_numpy() / 86400
     return 0.5 ** (age_days / half_life)
 
 
 def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = "monthly",
                  half_life: float | None = None) -> pd.Series:
-    """Prévisions (en €/MWh) de la marche `step` sur [start, end), réentraînement au rythme `refit`,
-    avec poids de récence si `half_life` est donnée."""
+    """Forecasts (in €/MWh) of step `step` on [start, end), retrained at pace `refit`,
+    with recency weights if `half_life` is given."""
     y = get_y(f, step)
     X = get_X(f, step)
     dates = refit_dates(start, end, refit) + [pd.Timestamp(end, tz=TZ)]
@@ -85,70 +85,70 @@ def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = 
     return pd.concat(preds).rename(step + REFIT_SUFFIX.get(refit, ""))
 
 
-# --------------------------------------------------------------------- test de Diebold-Mariano
-# Paires comparées (A, B) : choisies à l'avance pour limiter les tests multiples.
+# --------------------------------------------------------------------- Diebold-Mariano test
+# Compared pairs (A, B): chosen in advance to limit multiple testing.
 DM_PAIRS = [
-    ("B2", "naive_d7"),             # le modèle complet bat-il la référence ?
-    ("B2", "B2_brut"),              # la normalisation par le SRMC change-t-elle quelque chose ?
-    ("B2", "LEAR_quotidien"),       # meilleur LightGBM vs référence de la littérature
-    ("B1", "LEAR_quotidien"),       # à information égale
-    ("B1_hebdo", "LEAR_hebdo"),     # à information égale et même rythme de réentraînement
-    ("B2_hebdo", "B2"),             # réentraîner chaque semaine plutôt que chaque mois
-    ("B2_hebdo", "LEAR_quotidien"), # meilleur LightGBM vs meilleur LEAR (ajoutée après les runs hebdo)
-    ("B2_quotidien", "B2_hebdo"),   # le réentraînement quotidien apporte-t-il encore ? (fixée avant le run)
-    ("B2_quotidien", "LEAR_quotidien"),  # même rythme que le LEAR de l'article (fixée avant le run)
-    ("B2_rl_hebdo", "B2_hebdo"),    # normalisation pondérée par la charge résiduelle vs pleine
-    ("B2_rl_hebdo", "B2_brut_hebdo"),  # ... vs aucune normalisation
-    ("B2_rl", "B2"),                # idem au rythme mensuel (période de crise)
-    ("B2_rl", "B2_brut"),
-    # Ajouts post-test (développés et choisis sur la validation) : imiter l'adaptation de Chronos-2
-    ("B2_hebdo_hl90", "B2_hebdo"),  # poids de récence, demi-vie 90 j
-    ("B2_hebdo_hl180", "B2_hebdo"),
-    ("B2_hebdo_hl365", "B2_hebdo"),
-    ("B2_hebdo_corr", "B2_hebdo"),  # correction par les erreurs récentes
-    ("B2_hebdo_hl90_corr", "B2_hebdo"),       # les deux combinés (demi-vie retenue : 90 j)
-    ("B2_hebdo_hl90_corr", "B2_hebdo_hl90"),  # la correction ajoute-t-elle aux poids de récence ?
-    # Fixées avant le passage sur le test des variantes retenues en validation
-    ("B2_quotidien_corr", "B2_quotidien"),
-    ("B2_quotidien_corr", "Chronos2_fond"),
-    ("B2_hebdo_hl90_corr", "Chronos2_fond"),
-    # B3 : forme de la journée et régime récent (fixées avant les runs)
-    ("B3_hebdo", "B2_hebdo"),
-    ("B3_hebdo_corr", "B2_hebdo_corr"),
-    ("B3_hebdo_hl90_corr", "B2_hebdo_hl90_corr"),
-    ("B3_hebdo_corr", "Chronos2_fond"),
-    ("B3_hebdo_hl90_corr", "Chronos2_fond"),
-    # Versions quotidiennes (fixées avant les runs)
-    ("B3_quotidien_corr", "B2_quotidien"),
-    ("B3_quotidien_hl90_corr", "B2_quotidien"),
-    ("B3_quotidien_corr", "Chronos2_fond"),
-    ("B3_quotidien_hl90_corr", "Chronos2_fond"),
-    ("Chronos2_fond", "Chronos2_prix"),  # les fondamentaux aident-ils un modèle de fondation ?
-    ("B2_hebdo", "Chronos2_fond"),       # LightGBM vs modèle de fondation, mêmes informations
-    ("LEAR_quotidien", "LEAR_mensuel"),
+    ("B2", "naive_d7"),             # does the full model beat the benchmark?
+    ("B2", "B2_raw"),               # does the SRMC normalisation change anything?
+    ("B2", "LEAR_daily"),           # best LightGBM vs literature benchmark
+    ("B1", "LEAR_daily"),           # same information
+    ("B1_weekly", "LEAR_weekly"),   # same information and same retraining pace
+    ("B2_weekly", "B2"),            # retraining weekly rather than monthly
+    ("B2_weekly", "LEAR_daily"),    # best LightGBM vs best LEAR (added after the weekly runs)
+    ("B2_daily", "B2_weekly"),      # does daily retraining still help? (fixed before the run)
+    ("B2_daily", "LEAR_daily"),     # same pace as the LEAR of the paper (fixed before the run)
+    ("B2_rl_weekly", "B2_weekly"),  # residual-load-weighted normalisation vs full
+    ("B2_rl_weekly", "B2_raw_weekly"),  # ... vs no normalisation
+    ("B2_rl", "B2"),                # same at the monthly pace (crisis period)
+    ("B2_rl", "B2_raw"),
+    # Post-test additions (developed and chosen on validation): mimic Chronos-2's adaptation
+    ("B2_weekly_hl90", "B2_weekly"),  # recency weights, 90-day half-life
+    ("B2_weekly_hl180", "B2_weekly"),
+    ("B2_weekly_hl365", "B2_weekly"),
+    ("B2_weekly_corr", "B2_weekly"),  # correction by recent errors
+    ("B2_weekly_hl90_corr", "B2_weekly"),       # both combined (chosen half-life: 90 days)
+    ("B2_weekly_hl90_corr", "B2_weekly_hl90"),  # does the correction add to the recency weights?
+    # Fixed before running the variants chosen on validation on the test year
+    ("B2_daily_corr", "B2_daily"),
+    ("B2_daily_corr", "Chronos2_fund"),
+    ("B2_weekly_hl90_corr", "Chronos2_fund"),
+    # B3: shape of the day and current regime (fixed before the runs)
+    ("B3_weekly", "B2_weekly"),
+    ("B3_weekly_corr", "B2_weekly_corr"),
+    ("B3_weekly_hl90_corr", "B2_weekly_hl90_corr"),
+    ("B3_weekly_corr", "Chronos2_fund"),
+    ("B3_weekly_hl90_corr", "Chronos2_fund"),
+    # Daily versions (fixed before the runs)
+    ("B3_daily_corr", "B2_daily"),
+    ("B3_daily_hl90_corr", "B2_daily"),
+    ("B3_daily_corr", "Chronos2_fund"),
+    ("B3_daily_hl90_corr", "Chronos2_fund"),
+    ("Chronos2_fund", "Chronos2_prices"),  # do fundamentals help a foundation model?
+    ("B2_weekly", "Chronos2_fund"),        # LightGBM vs foundation model, same information
+    ("LEAR_daily", "LEAR_monthly"),
     ("B2", "MSTL"),
 ]
 
 
 def diebold_mariano(err_a: pd.Series, err_b: pd.Series, day: pd.Series) -> dict:
-    """Test de Diebold-Mariano sur la perte absolue, à variance HAC (Newey-West).
+    """Diebold-Mariano test on the absolute loss, with a HAC (Newey-West) variance.
 
-    Comme Lago et al. (2021), on moyenne d'abord le différentiel de perte par jour (les 24 heures d'un
-    jour sont fortement corrélées), puis on corrige l'autocorrélation entre jours par Newey-West.
-    t < 0 : A a une erreur plus faible que B.
+    As in Lago et al. (2021), the loss differential is first averaged by day (the 24 hours of a day
+    are strongly correlated), then the autocorrelation between days is handled by Newey-West.
+    t < 0: A has a lower error than B.
     """
     d = (err_a.abs() - err_b.abs()).groupby(day.to_numpy()).mean().dropna().to_numpy()
     T = len(d)
-    lags = int(np.floor(4 * (T / 100) ** (2 / 9)))      # règle usuelle de Newey-West
+    lags = int(np.floor(4 * (T / 100) ** (2 / 9)))      # usual Newey-West rule
     u = d - d.mean()
     lrv = u @ u / T
     for k in range(1, lags + 1):
         lrv += 2 * (1 - k / (lags + 1)) * (u[k:] @ u[:-k]) / T
-    if lrv <= 0:   # différentiel constant (ex. deux prévisions identiques)
-        return {"ecart_MAE": d.mean(), "t_HAC": np.nan, "p_value": np.nan, "jours": T, "lags_NW": lags}
+    if lrv <= 0:   # constant differential (e.g. two identical forecasts)
+        return {"MAE_gap": d.mean(), "t_HAC": np.nan, "p_value": np.nan, "days": T, "lags_NW": lags}
     t = d.mean() / np.sqrt(lrv / T)
     p = 2 * (1 - _normal_cdf(abs(t)))
-    return {"ecart_MAE": d.mean(), "t_HAC": t, "p_value": p, "jours": T, "lags_NW": lags}
+    return {"MAE_gap": d.mean(), "t_HAC": t, "p_value": p, "days": T, "lags_NW": lags}
 
 
 def _normal_cdf(x: float) -> float:
@@ -168,30 +168,31 @@ def dm_table(preds: pd.DataFrame, f: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out).T
 
 
-# --------------------------------------------------------------------- métriques
+# --------------------------------------------------------------------- metrics
 def regime(f: pd.DataFrame) -> pd.Series:
-    """Régime de chaque heure : prix négatif, pointe du soir, reste (sur le prix réalisé)."""
-    r = pd.Series("reste", index=f.index)
-    r[f["time_local"].dt.hour.isin(EVENING_PEAK)] = "pointe_soir"
-    r[f["price_da"] < 0] = "negatif"   # prioritaire : une heure négative de pointe reste négative
+    """Regime of each hour: negative price, evening peak, other (on the actual price)."""
+    r = pd.Series("other", index=f.index)
+    r[f["time_local"].dt.hour.isin(EVENING_PEAK)] = "evening_peak"
+    r[f["price_da"] < 0] = "negative"   # takes priority: a negative peak hour stays negative
     return r
 
 
 def metrics(preds: pd.DataFrame, f: pd.DataFrame) -> pd.DataFrame:
-    """MAE et rMAE (vs naïf J-7) par modèle, sur toutes les heures et par régime.
+    """MAE and rMAE (vs naive D-7) by model, on all hours and by regime.
 
-    Seules les heures où tous les modèles ont une prévision sont comptées, pour comparer à périmètre égal.
+    Only the hours where every model has a forecast are counted, so that models are compared on
+    the same hours.
     """
     rows = f.loc[preds.index]
     ok = preds.notna().all(axis=1) & rows["price_da"].notna()
     err = preds[ok].sub(rows.loc[ok, "price_da"], axis=0).abs()
     reg = regime(rows[ok])
     out = {}
-    for name, mask in [("toutes", slice(None))] + [(r, reg == r) for r in ("negatif", "pointe_soir", "reste")]:
+    for name, mask in [("all", slice(None))] + [(r, reg == r) for r in ("negative", "evening_peak", "other")]:
         e = err[mask]
         out[(name, "MAE")] = e.mean()
         out[(name, "rMAE")] = e.mean() / e["naive_d7"].mean()
-        out[(name, "heures")] = pd.Series(len(e), index=e.columns)
+        out[(name, "hours")] = pd.Series(len(e), index=e.columns)
     table = pd.DataFrame(out)
     table.columns = pd.MultiIndex.from_tuples(table.columns)
     return table
@@ -199,8 +200,8 @@ def metrics(preds: pd.DataFrame, f: pd.DataFrame) -> pd.DataFrame:
 
 # --------------------------------------------------------------------- main
 def load_predictions(period: str) -> pd.DataFrame:
-    """Relit les prédictions déjà calculées : un fichier par modèle, pour que plusieurs runs
-    en parallèle n'écrasent pas les résultats les uns des autres."""
+    """Read back the forecasts already computed: one file per model, so that several runs in
+    parallel do not overwrite each other's results."""
     folder = PREDICTIONS_DIR / period
     files = sorted(folder.glob("*.parquet")) if folder.exists() else []
     return pd.concat([pd.read_parquet(p).iloc[:, 0].rename(p.stem) for p in files], axis=1) if files else None
@@ -217,11 +218,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--period", choices=list(PERIODS), default="validation")
     ap.add_argument("--models", nargs="*", choices=models, default=models,
-                    help="modèles à (re)calculer ; les autres sont relus dans les prédictions déjà sauvées "
-                         "(--models sans argument : recalcule seulement les tableaux)")
+                    help="models to (re)compute; the others are read from the saved forecasts "
+                         "(--models with no argument: only recompute the tables)")
     args = ap.parse_args()
     if args.period == "test":
-        print("ATTENTION : période de test. À ne lancer qu'une fois les choix figés sur la validation.")
+        print("WARNING: test period. Only run it once the choices are frozen on validation.")
 
     start, end = PERIODS[args.period]
     f = add_features(load_dataset())
@@ -235,9 +236,9 @@ def main():
         else:
             step, refit, half_life = REFIT_VARIANTS[name]
             pred = walk_forward(f, step, start, end, refit=refit, half_life=half_life)
-        save_prediction(args.period, pred.rename(name))   # sauvé tout de suite : un plantage ne perd rien
+        save_prediction(args.period, pred.rename(name))   # saved at once: a crash loses nothing
 
-    # Tableaux sur tout ce qui est disponible (y compris les modèles d'autres runs)
+    # Tables on everything available (including models from other runs)
     preds = pd.DataFrame({name: f.loc[in_period, col] for name, col in NAIVE.items()})
     saved = load_predictions(args.period)
     if saved is not None:
@@ -252,10 +253,10 @@ def main():
     dm.round(4).to_csv(RESULTS / f"diebold_mariano_{args.period}.csv")
 
     with pd.option_context("display.width", 140, "display.float_format", "{:.2f}".format):
-        print(f"\n=== {args.period} : {start} -> {end} ===")
-        print(table.drop(columns="heures", level=1))
-        print("heures par régime :", table.xs("heures", axis=1, level=1).iloc[0].astype(int).to_dict())
-        print("\nDiebold-Mariano (perte absolue, moyenne journalière, HAC Newey-West) :")
+        print(f"\n=== {args.period}: {start} -> {end} ===")
+        print(table.drop(columns="hours", level=1))
+        print("hours by regime:", table.xs("hours", axis=1, level=1).iloc[0].astype(int).to_dict())
+        print("\nDiebold-Mariano (absolute loss, daily mean, HAC Newey-West):")
         print(dm)
 
 

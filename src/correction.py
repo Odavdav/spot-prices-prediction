@@ -1,20 +1,20 @@
-"""Correction d'un modèle par ses erreurs récentes (deuxième étage).
+"""Correction of a model by its recent errors (second stage).
 
-Idée (imiter l'adaptation de Chronos-2) : le modèle de base fait ses prévisions hors échantillon ;
-un petit modèle apprend à prévoir l'erreur du jour J à partir des erreurs récentes :
-    - erreur de J-1 à la même heure ;
-    - erreur moyenne de J-1 ;
-    - erreur moyenne des 7 derniers jours, à la même heure et toutes heures confondues.
-Prévision corrigée = prévision de base − erreur prévue.
+Idea (mimicking Chronos-2's adaptation): the base model makes its out-of-sample forecasts;
+a small model learns to predict the error of day D from recent errors:
+    - error of D-1 at the same hour;
+    - mean error of D-1;
+    - mean error of the last 7 days, at the same hour and over all hours.
+Corrected forecast = base forecast − predicted error.
 
-Ensemble d'information : l'erreur de J-1 = prévision de J-1 (faite à 12h en J-2) − prix de J-1
-(publié vers 13h en J-2). Elle est donc connue à 12h en J-1, avant la fermeture pour J.
-Le modèle de correction est une régression médiane (cohérente avec la MAE), réestimée chaque semaine
-sur tout l'historique d'erreurs disponible (fenêtre expansive).
+Information set: the error of D-1 = forecast of D-1 (made at 12:00 on D-2) − price of D-1
+(published around 13:00 on D-2). It is therefore known at 12:00 on D-1, before gate closure for D.
+The correction model is a median regression (consistent with the MAE), re-estimated every week
+on all the available error history (expanding window).
 
-Usage :
-    python -m src.correction --base B2_hebdo --period validation --history rodage
-    python -m src.correction --base B2_quotidien --period test --history validation
+Usage:
+    python -m src.correction --base B2_weekly --period validation --history burn_in
+    python -m src.correction --base B2_daily --period test --history validation
 """
 import argparse
 
@@ -27,7 +27,7 @@ from src.config import PERIODS, TZ
 from src.data import load_dataset
 
 FEATURES = ["err_d1", "err_d1_mean", "err_7d_hour", "err_7d_mean"]
-MIN_HISTORY_DAYS = 90   # pas de correction tant que l'historique d'erreurs est trop court
+MIN_HISTORY_DAYS = 90   # no correction while the error history is too short
 
 
 def _day_hour(time_local: pd.Series):
@@ -36,11 +36,11 @@ def _day_hour(time_local: pd.Series):
 
 
 def error_features(error: pd.Series, time_local: pd.Series) -> pd.DataFrame:
-    """Tableau (jour, heure) : erreur du jour (cible) et features d'erreurs passées (J-1 à J-7)."""
+    """(day, hour) table: error of the day (target) and features of past errors (D-1 to D-7)."""
     day, hour = _day_hour(time_local)
-    panel = error.groupby([day, hour]).mean().unstack()            # jours × heures locales
+    panel = error.groupby([day, hour]).mean().unstack()            # days × local hours
     panel = panel.reindex(pd.date_range(panel.index.min(), panel.index.max(), freq="D"))
-    past = [panel.shift(k) for k in range(1, 8)]                   # erreurs de J-1 … J-7
+    past = [panel.shift(k) for k in range(1, 8)]                   # errors of D-1 … D-7
     feats = {
         "err_d1": past[0],
         "err_d1_mean": pd.DataFrame(np.repeat(past[0].mean(axis=1).to_numpy()[:, None], panel.shape[1], 1),
@@ -57,9 +57,9 @@ def error_features(error: pd.Series, time_local: pd.Series) -> pd.DataFrame:
 
 def error_correction(base: pd.Series, price: pd.Series, time_local: pd.Series,
                      start: str, end: str) -> pd.Series:
-    """Prévision corrigée sur [start, end). `base`, `price`, `time_local` couvrent l'historique et la période.
+    """Corrected forecast on [start, end). `base`, `price`, `time_local` cover the history and the period.
 
-    Seuls les prix des jours < J servent à corriger le jour J (via les erreurs passées)."""
+    Only the prices of days < D are used to correct day D (through past errors)."""
     error = base - price
     table = error_features(error, time_local)
     days = pd.date_range(start, end, freq="D", inclusive="left")
@@ -74,7 +74,7 @@ def error_correction(base: pd.Series, price: pd.Series, time_local: pd.Series,
         rows = table[(day_idx >= a) & (day_idx < b)]
         ok = rows[FEATURES].notna().all(axis=1)
         corr.loc[rows.index[ok]] = model.predict(rows.loc[ok, FEATURES])
-    # Retour sur l'index horaire
+    # Back onto the hourly index
     day, hour = _day_hour(time_local)
     in_period = (day >= days[0]) & (day <= days[-1])
     key = pd.MultiIndex.from_arrays([day[in_period], hour[in_period]])
@@ -86,8 +86,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
     ap.add_argument("--period", choices=list(PERIODS), required=True)
-    ap.add_argument("--history", nargs="*", default=[], help="périodes dont les prévisions servent d'historique")
-    ap.add_argument("--name", default=None, help="nom de la sortie (par défaut <base>_corr)")
+    ap.add_argument("--history", nargs="*", default=[], help="periods whose forecasts serve as history")
+    ap.add_argument("--name", default=None, help="output name (default: <base>_corr)")
     args = ap.parse_args()
 
     parts = [pd.read_parquet(PREDICTIONS_DIR / p / f"{args.base}.parquet").iloc[:, 0]
@@ -100,8 +100,8 @@ def main():
         out = out.rename(args.name)
     save_prediction(args.period, out)
     real = df.loc[out.index, "price_da"]
-    print(f"{args.base} : MAE {(base.loc[out.index] - real).abs().mean():.2f} -> "
-          f"{out.name} : {(out - real).abs().mean():.2f} €/MWh")
+    print(f"{args.base}: MAE {(base.loc[out.index] - real).abs().mean():.2f} -> "
+          f"{out.name}: {(out - real).abs().mean():.2f} €/MWh")
 
 
 if __name__ == "__main__":
