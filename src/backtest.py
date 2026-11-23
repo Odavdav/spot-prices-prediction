@@ -135,6 +135,7 @@ DM_PAIRS = [
     ("B2_daily", "LEAR_B2_daily"),  # same information and same pace: model effect only
     ("LEAR_B2_daily", "LEAR_daily"),  # do gas, CO2 and Germany help a linear model?
     ("B2", "MSTL"),
+    ("Chronos2_prices", "MSTL"),   # prices only (added after the test run, for the README)
 ]
 
 

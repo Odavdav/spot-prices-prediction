@@ -33,3 +33,4 @@ B2_weekly vs B1_weekly,-0.9459,-2.2121,0.027,365.0,5.0
 B2_daily vs LEAR_B2_daily,-0.9004,-2.3023,0.0213,365.0,5.0
 LEAR_B2_daily vs LEAR_daily,-2.2953,-3.4118,0.0006,365.0,5.0
 B2 vs MSTL,-3.8027,-4.5407,0.0,365.0,5.0
+Chronos2_prices vs MSTL,-3.8,-7.109,0.0,365.0,5.0

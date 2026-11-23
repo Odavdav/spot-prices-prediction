@@ -22,8 +22,6 @@ reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
   (daily retraining). Those ingredients are recent-error correction, recency weights, and day-shape and
   regime features. That closes most of the gap, but Chronos-2 stays significantly ahead (p = 0.006).
 
-![Models at equal information](results/figures/04_models.png)
-
 ---
 
 ## Contents
@@ -93,10 +91,10 @@ change, around tricky days (clock changes, Easter). A deliberately planted leak 
 
 **Benchmarks (`src/benchmarks.py`).**
 - **Naive forecasts** D-1 and D-7. D-7 is the reference for the relative MAE (rMAE).
-- **MSTL:** daily and weekly seasonal decomposition of prices only.
-- **LEAR** (Lago et al., 2021, *Applied Energy* 293): one LASSO regression per hour, averaged over 56, 84, 1,092 and 1,456-day windows, re-estimated monthly, weekly or daily. Standard LEAR has the same information as B1 (prices and French fundamentals).
+- **MSTL** (Bandara, Hyndman and Bergmeir, 2021): the classical statistical baseline. It splits the last 8 weeks of prices into a trend, a daily cycle and a weekly cycle, and extends each of them. Prices only, refitted every day.
+- **LEAR** (Lago et al., 2021, *Applied Energy* 293), the standard linear benchmark of the price-forecasting literature: one LASSO regression per hour, averaged over 56, 84, 1,092 and 1,456-day windows, re-estimated monthly, weekly or daily. Standard LEAR has the same information as B1 (prices and French fundamentals).
 - **LEAR-B2:** the same model with B2's information added (German price D-1, German load and renewables forecasts, SRMC), re-estimated daily. It isolates the model effect from the information effect.
-- **Chronos-2** (Amazon, Oct. 2025): zero-shot, with prices only or with the same fundamentals as B2.
+- **Chronos-2** (Amazon, Oct. 2025): a time-series foundation model, pre-trained on a large collection of series from many domains and used here without any training on French prices ("zero-shot"). At each forecast it reads the last 12 weeks of prices, with or without the same fundamentals as B2.
 
 **Protocol (`src/backtest.py`).**
 - **Walk-forward with an expanding window:** each retraining uses every delivery before the retraining date.
@@ -134,6 +132,14 @@ Same model (LightGBM), same weekly retraining; one block of information added at
 - **French fundamentals** cut the error by a further 18 % (validation) to 20 % (test), p < 0.001 on both. On negative-price hours the gain is 27 % on validation but only 13 % on the test: less stable than the overall gain.
 - **Gas, CO₂ and Germany** add a smaller but significant 1.35 (validation, p < 0.001) and 0.95 €/MWh (test, p = 0.03), mostly at the evening peak, when gas plants set the price.
 
+**The extra information helps every model** (test year; negative gap = the version with more information has the lower error):
+
+| Model | Information added | MAE gap (€/MWh) | p-value |
+|---|---|---|---|
+| LightGBM (weekly) | B1 → B2: gas, CO₂, Germany | −0.95 | 0.03 |
+| LEAR (daily) | B1 → B2: gas, CO₂, Germany | −2.30 | < 0.001 |
+| Chronos-2 | prices only → fundamentals of B2 | −5.41 | < 0.001 |
+
 ### 2. How often to retrain
 
 ![Retraining frequency](results/figures/03_retraining.png)
@@ -145,17 +151,23 @@ Same information (B2 for LightGBM, B1 for LEAR); only the retraining pace change
 
 ### 3. Which model, at equal information
 
-See the figure at the top of the page. Every model is updated daily (MSTL and Chronos-2 re-read the latest prices at each forecast).
+![Models at equal information](results/figures/04_models.png)
 
-| Comparison (test year) | MAE gap (€/MWh) | p-value |
-|---|---|---|
-| LightGBM vs LEAR, both with B2's information | −0.90 | 0.02 |
-| LEAR with vs without gas, CO₂ and Germany | −2.30 | < 0.001 |
-| Chronos-2 with vs without fundamentals | −5.41 | < 0.001 |
-| LightGBM vs Chronos-2, both with B2's information (chosen after seeing the results) | +2.87 | < 0.001 |
+Models are only compared with the same inputs, in two groups: prices only (MSTL, a classical seasonal
+decomposition, against Chronos-2, a pre-trained foundation model), then the full information of B2
+(LEAR, the literature's linear benchmark, against LightGBM and Chronos-2). Every model is updated
+daily; MSTL and Chronos-2 re-read the latest prices at each forecast.
 
-- **With prices only,** the foundation model (Chronos-2) clearly beats the classical decomposition (MSTL), most of all on negative-price hours.
-- **With the same information, LightGBM beats LEAR by only 0.9 €/MWh**, and almost all of it on negative-price hours (18.2 vs 22.1). The two are level at the evening peak. The information matters more than the model: gas, CO₂ and German data cut LEAR's error by 2.3 €/MWh.
+**Diebold-Mariano tests, test year** (negative gap = the first model has the lower error):
+
+| Comparison | Information | MAE gap (€/MWh) | p-value |
+|---|---|---|---|
+| Chronos-2 vs MSTL (added after the test run) | prices only | −3.80 | < 0.001 |
+| LightGBM vs LEAR | B2 | −0.90 | 0.02 |
+| LightGBM vs Chronos-2 (chosen after seeing the results) | B2 | +2.87 | < 0.001 |
+
+- **With prices only,** the foundation model clearly beats the classical decomposition, most of all on negative-price hours (19.0 vs 33.4 €/MWh).
+- **With the same information, LightGBM beats LEAR by only 0.9 €/MWh**, and almost all of it on negative-price hours (18.2 vs 22.1). The two are level at the evening peak. The information matters more than the model (see section 1).
 - **Chronos-2 with fundamentals is the best model overall** (14.4), but not on negative-price hours, where LightGBM is better (18.2 vs 19.6).
 
 ### 4. Normalising the target by the gas-plant cost
