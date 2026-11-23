@@ -126,6 +126,9 @@ DM_PAIRS = [
     ("Chronos2_fund", "Chronos2_prices"),  # do fundamentals help a foundation model?
     ("B2_weekly", "Chronos2_fund"),        # LightGBM vs foundation model, same information
     ("LEAR_daily", "LEAR_monthly"),
+    # LEAR with the B2 information (fixed before the runs)
+    ("B2_daily", "LEAR_B2_daily"),  # same information and same pace: model effect only
+    ("LEAR_B2_daily", "LEAR_daily"),  # do gas, CO2 and Germany help a linear model?
     ("B2", "MSTL"),
 ]
 

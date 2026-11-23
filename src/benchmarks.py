@@ -13,6 +13,10 @@ of the week. Prices and inputs are transformed by asinh after robust scaling (me
 Forecast = mean of the models calibrated on 56, 84, 1092 and 1456 days.
 Same information as step B1 (calendar, price lags, FR fundamentals), without gas or DE.
 
+LEAR-B2 — same model with the information of step B2 added: German price of the 24 hours of D-1,
+German load and wind + solar forecasts for D, and the CCGT SRMC for D (TTF and EUA closes from D-2).
+The target stays the raw price; the SRMC is an input. Re-estimated daily.
+
 Departures from the original, to be documented:
 - Short windows (56 and 84 days < 247 inputs): recent scikit-learn then requires an estimate of
   the noise variance for the AIC; the one of the 1456-day model at the same hour is reused.
@@ -74,8 +78,10 @@ def mstl_forecasts(f: pd.DataFrame, start: str, end: str) -> pd.Series:
 
 
 # --------------------------------------------------------------------- LEAR
-def _lear_design(f: pd.DataFrame):
-    """LEAR input matrix (one row per delivery day) and days × 24 hours target."""
+def _lear_design(f: pd.DataFrame, extended: bool = False):
+    """LEAR input matrix (one row per delivery day) and days × 24 hours target.
+
+    `extended`: add the B2 information (German price D-1, German load and renewables for D, SRMC)."""
     day, hour = _local_day_hour(f)
     days = pd.date_range(day.min(), day.max(), freq="D")
     price = _daily_panel(f["price_da"], day, hour, days)
@@ -88,8 +94,14 @@ def _lear_design(f: pd.DataFrame):
     for name, panel in (("load", load), ("vre", vre)):
         for k in (0, 1, 7):
             blocks[f"{name}_d{k}"] = panel.shift(k)
+    if extended:
+        blocks["de_price_d1"] = _daily_panel(f["de_price_da"], day, hour, days).shift(1)
+        blocks["de_load_d0"] = _daily_panel(f["de_load_fc"], day, hour, days)
+        blocks["de_vre_d0"] = _daily_panel(f["de_wind_fc"] + f["de_solar_fc"], day, hour, days)
     X = pd.concat(blocks, axis=1)
     X.columns = [f"{b}_h{h}" for b, h in X.columns]
+    if extended:   # the SRMC is constant within a day: one input
+        X["srmc_ccgt"] = f["srmc_ccgt"].groupby(day.to_numpy()).mean().reindex(days)
     dummies = pd.get_dummies(days.dayofweek, prefix="dow").astype(float)
     dummies.index = days
     X = X.ffill()   # forecast gaps: carry the previous day at the same hour
@@ -132,9 +144,10 @@ def _lear_fit_predict(X, dummies, price, fit_day, predict_days):
 LEAR_NAMES = {"daily": "LEAR_daily", "weekly": "LEAR_weekly", "monthly": "LEAR_monthly"}
 
 
-def lear_forecasts(f: pd.DataFrame, start: str, end: str, refit: str = "daily") -> pd.Series:
+def lear_forecasts(f: pd.DataFrame, start: str, end: str, refit: str = "daily",
+                   extended: bool = False) -> pd.Series:
     """LEAR forecasts on [start, end), re-estimated every day, week (7 days) or month."""
-    X, dummies, price, day, hour = _lear_design(f)
+    X, dummies, price, day, hour = _lear_design(f, extended)
     days = _period_days(start, end)
     t0 = time.time()
     if refit == "daily":
@@ -147,8 +160,8 @@ def lear_forecasts(f: pd.DataFrame, start: str, end: str, refit: str = "daily") 
     for i, (fit_day, predict_days) in enumerate(groups, 1):
         panels.append(_lear_fit_predict(X, dummies, price, fit_day, predict_days))
         if refit == "daily" and i % 30 == 0:
-            print(f"  LEAR daily: {i}/{len(groups)} days ({time.time() - t0:.0f} s)")
-    name = LEAR_NAMES[refit]
+            print(f"  LEAR{'_B2' if extended else ''} daily: {i}/{len(groups)} days ({time.time() - t0:.0f} s)")
+    name = LEAR_NAMES[refit].replace("LEAR", "LEAR_B2") if extended else LEAR_NAMES[refit]
     print(f"  {name}: {len(groups)} re-estimations in {time.time() - t0:.0f} s")
     hourly = pd.Series(_to_hourly(pd.concat(panels), day, hour), index=f.index)
     return hourly.loc[hourly.notna()].rename(name)
@@ -215,4 +228,5 @@ BENCHMARKS = {
     "LEAR_monthly": lambda f, s, e: lear_forecasts(f, s, e, refit="monthly"),
     "LEAR_weekly": lambda f, s, e: lear_forecasts(f, s, e, refit="weekly"),
     "LEAR_daily": lambda f, s, e: lear_forecasts(f, s, e, refit="daily"),
+    "LEAR_B2_daily": lambda f, s, e: lear_forecasts(f, s, e, refit="daily", extended=True),
 }

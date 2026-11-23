@@ -69,6 +69,17 @@ def test_features_unchanged_when_future_is_erased(synthetic, delivery_day):
         pdt.assert_frame_equal(get_X(full, step)[on_day], get_X(seen, step)[on_day], check_dtype=False)
 
 
+@pytest.mark.parametrize("delivery_day", DELIVERY_DAYS)
+def test_lear_inputs_unchanged_when_future_is_erased(synthetic, delivery_day):
+    """Same check for the LEAR input matrices (standard and with the B2 information)."""
+    from src.benchmarks import _lear_design
+    d = pd.Timestamp(delivery_day)
+    for extended in (False, True):
+        full = _lear_design(add_features(synthetic), extended)[0]
+        seen = _lear_design(add_features(mask_unpublished(synthetic, delivery_day)), extended)[0]
+        pdt.assert_series_equal(full.loc[d], seen.loc[d])
+
+
 def test_masking_catches_a_leaky_feature(synthetic):
     """Check of the test itself: a feature reading the previous hour's price must be caught."""
     day = "2024-04-08"
