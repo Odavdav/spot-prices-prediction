@@ -5,8 +5,8 @@ is trained on every delivery before that date (expanding window), then forecasts
 the next refit date. Weekly and daily retraining are variants (REFIT_VARIANTS).
 
 Metrics: MAE and rMAE (MAE / MAE of the naive D-7 forecast on the same hours), by regime.
-Significance: Diebold-Mariano tests on the pairs of DM_PAIRS, on all hours, by regime (exploratory)
-and on plausible forecasts only (robustness check for LEAR, see `plausible`).
+Significance: Diebold-Mariano tests on the pairs of DM_PAIRS, on all hours and by regime
+(exploratory).
 
 Usage:
     python -m src.backtest                    # validation (Nov. 2024 -> Oct. 2025), models of RUNS
@@ -206,19 +206,6 @@ def dm_table(preds: pd.DataFrame, f: pd.DataFrame, hours: pd.Series | None = Non
     return pd.DataFrame(out).T
 
 
-def plausible(preds: pd.DataFrame, f: pd.DataFrame) -> pd.DataFrame:
-    """Forecasts within the largest absolute price of the 365 days before their delivery day (a
-    bound known when forecasting), NaN otherwise.
-
-    Robustness check: LEAR's sinh back-transform occasionally explodes (forecasts of thousands of
-    €/MWh). Tests on these forecasts show whether a conclusion depends on those few hours."""
-    day = f["time_local"].dt.tz_convert(TZ).dt.tz_localize(None).dt.normalize()
-    daily_max = f["price_da"].abs().groupby(day.to_numpy()).max()
-    bound = daily_max.rolling("365D").max().shift(1)            # days D-365 to D-1
-    hourly = pd.Series(bound.reindex(day.loc[preds.index].to_numpy()).to_numpy(), index=preds.index)
-    return preds.where(preds.abs().le(hourly, axis=0))
-
-
 # --------------------------------------------------------------------- metrics
 def regime(f: pd.DataFrame) -> pd.Series:
     """Regime of each hour: negative price, evening peak, other (on the actual price)."""
@@ -305,9 +292,6 @@ def main():
     reg = regime(f.loc[preds.index])   # exploratory: one test per regime and pair
     by_regime = pd.concat({r: dm_table(preds, f, reg == r) for r in ("negative", "evening_peak", "other")})
     by_regime.round(4).to_csv(RESULTS / f"diebold_mariano_{args.period}_by_regime.csv")
-    if args.period in ("validation", "test"):   # in the crisis, prices legitimately broke all records
-        dm_table(plausible(preds, f), f).round(4).to_csv(
-            RESULTS / f"diebold_mariano_{args.period}_plausible.csv")
 
     with pd.option_context("display.width", 140, "display.float_format", "{:.2f}".format):
         print(f"\n=== {args.period}: {start} -> {end} ===")

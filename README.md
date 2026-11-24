@@ -7,12 +7,14 @@ differences statistically, and compares a gradient-boosting model with the liter
 reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
 
 **Headline results (test year, Nov. 2025 – Oct. 2026).** The main models were run once on it;
-LEAR-B2, the extension and the tuning were added afterwards (see [limitations](#limitations)).
+LEAR-B2, the extension and the tuning were added afterwards, and an implementation error in LEAR
+was fixed (see [limitations](#limitations)).
 
 - The main model (LightGBM with fundamentals, gas and CO₂ costs and German data, retrained daily)
   reaches an MAE of **17.3 €/MWh**, i.e. **44 %** of the naive "same hour last week" error.
-- **The information matters more than the model:** at equal information, LightGBM beats LEAR by
-  only **0.9 €/MWh**, while giving LEAR the gas, CO₂ and German data improves it by **1.6 to 2.3 €/MWh**.
+- **The information matters more than the model:** at equal information, the literature's linear
+  benchmark (LEAR) is level with LightGBM (17.0 against 17.3 €/MWh, p = 0.46), while gas, CO₂ and
+  German data improve each of them by about **0.9 €/MWh**.
 - **Retraining frequency matters more than the model choice:** retraining LightGBM daily instead of
   monthly cuts its error by 2.5 €/MWh.
 - **A zero-shot foundation model given the same fundamentals does better still** (Chronos-2:
@@ -108,8 +110,8 @@ A search run at the very end produced separate, tuned variants
 - **Naive forecasts** D-1 and D-7. D-7 is the reference for the relative MAE (rMAE).
 - **MSTL** (Bandara, Hyndman and Bergmeir, 2021): the classical statistical baseline. It splits the last 8 weeks of prices into a trend, a daily cycle and a weekly cycle, and extends each of them. Prices only, refitted every day.
 - **LEAR** (Lago et al., 2021, *Applied Energy* 293), the standard linear benchmark of the price-forecasting literature: one LASSO regression per hour, averaged over 56, 84, 1,092 and 1,456-day windows, re-estimated monthly, weekly or daily. Standard LEAR uses the same data as B1: French prices, load and renewables forecasts, and the weekday.
-  - As in the paper and its reference code (`epftoolbox`), forecasts are not clipped. LEAR works on an asinh scale and converts back with sinh, which grows exponentially: when an input leaves the range of the calibration window, the forecast can explode. On the test year, daily LEAR forecast up to 2,090 €/MWh, when the actual price never exceeded 391. LEAR comparisons are therefore also reported without the hours where a forecast exceeds, in absolute value, every price of the previous 365 days: a bound known at forecast time, applied to every model, and set after the test run (`results/diebold_mariano_*_plausible.csv`).
-- **LEAR-B2:** the same model with B2's information added (German price D-1, German load and renewables forecasts, SRMC), re-estimated daily. It isolates the model effect from the information effect. It never explodes on the test year.
+  - The estimation follows the paper's reference code (`epftoolbox`) step by step, and `tests/test_lear_reference.py` checks that it reproduces that code's forecasts.
+- **LEAR-B2:** the same model with B2's information added (German price D-1, German load and renewables forecasts, SRMC), re-estimated daily. It isolates the model effect from the information effect.
 - **Chronos-2** (Amazon, Oct. 2025): a time-series foundation model, pre-trained on a large collection of series from many domains and used here without any training on French prices ("zero-shot"). At each forecast it reads the last 12 weeks of prices, with or without the same fundamentals as B2.
 
 **Protocol (`src/backtest.py`).**
@@ -122,15 +124,15 @@ A search run at the very end produced separate, tuned variants
 
 Each result below answers one question and varies **one thing at a time**: the information, the
 retraining pace, the model or the target. Full tables (every model, every period, every
-Diebold-Mariano test, also by regime and without LEAR's exploding hours) are in [`results/`](results/).
+Diebold-Mariano test, also by regime) are in [`results/`](results/).
 
 **Summary (MAE in €/MWh; rMAE vs naive D-7 in brackets):**
 
 | Model | Information | Updated | Validation | Test | Test, negative hours | Test, evening peak |
 |---|---|---|---|---|---|---|
 | Naive D-7 | last week's price | – | 32.4 | 39.7 | 30.6 | 42.3 |
-| LEAR | B1 (no gas, no Germany) | daily | 15.0 | 20.5 (0.52) | 24.7 | 19.4 |
-| LEAR-B2 | B2 | daily | 14.2 | 18.2 (0.46) | 22.1 | 18.1 |
+| LEAR | B1 (no gas, no Germany) | daily | 13.2 | 17.8 (0.45) | 20.8 | 18.8 |
+| LEAR-B2 | B2 | daily | 12.8 | 17.0 (0.43) | 18.9 | 17.4 |
 | **LightGBM B2 (main model)** | B2 | daily | 13.5 | 17.3 (0.44) | **18.2** | 18.3 |
 | LightGBM final (post-test extension) | B3 + error correction | daily | **12.4** | 15.6 (0.39) | 22.9 | **15.7** |
 | **Chronos-2 + fundamentals** | B2 | daily, no training | not run | **14.4 (0.36)** | 19.6 | 15.8 |
@@ -157,7 +159,7 @@ Same model (LightGBM), same weekly retraining; one block of information added at
 | Model | Information added | MAE gap (€/MWh) | p-value |
 |---|---|---|---|
 | LightGBM (weekly) | B1 → B2: gas, CO₂, Germany | −0.95 | 0.03 |
-| LEAR (daily) | B1 → B2: gas, CO₂, Germany | −2.30 (−1.59 without LEAR's exploding hours) | < 0.001 |
+| LEAR (daily) | B1 → B2: gas, CO₂, Germany | −0.85 | < 0.001 |
 | Chronos-2 | prices only → fundamentals of B2 | −5.41 | < 0.001 |
 
 ### 2. How often to retrain
@@ -167,7 +169,7 @@ Same model (LightGBM), same weekly retraining; one block of information added at
 Same information (B2 for LightGBM, B1 for LEAR); only the retraining pace changes.
 
 - **Updating often helps both model families, with diminishing returns.** For LightGBM, weekly instead of monthly is worth 1.76 €/MWh on the test and daily instead of weekly another 0.78 (both p < 0.001).
-- **LEAR needs fresh estimates at least as much.** Re-estimating it daily rather than monthly is worth 2.7 €/MWh on validation (p < 0.001). On the test year, monthly LEAR explodes on 19 hours (up to 32,721 €/MWh in July 2026), which inflates its MAE in the figure (28.9). Without those hours the gain from daily re-estimation is again 2.7 €/MWh (p < 0.001).
+- **LEAR gains about as much.** Re-estimating it daily rather than monthly is worth 1.3 €/MWh on validation and 2.2 on the test (both p < 0.001), against 0.9 and 2.5 for LightGBM.
 
 ### 3. Which model, at equal information
 
@@ -183,11 +185,11 @@ Every model is updated daily; MSTL and Chronos-2 re-read the latest prices at ea
 | Comparison | Information | MAE gap (€/MWh) | p-value |
 |---|---|---|---|
 | Chronos-2 vs MSTL (added after the test run) | prices only | −3.80 | < 0.001 |
-| LightGBM vs LEAR-B2 | B2 | −0.90 | 0.02 |
+| LightGBM vs LEAR-B2 | B2 | +0.28 | 0.46 |
 | LightGBM vs Chronos-2 (chosen after seeing the results) | B2 | +2.87 | < 0.001 |
 
 - **With prices only,** the foundation model clearly beats the classical decomposition; the gap is widest on negative-price hours (19.0 vs 33.4 €/MWh).
-- **With the same information, LightGBM beats LEAR by only 0.9 €/MWh.** The gap per hour is widest on negative-price hours (18.2 vs 22.1 €/MWh, p = 0.04), but ordinary hours, twelve times more numerous, carry three quarters of it (16.9 vs 17.8). The two are level at the evening peak. The information matters more than the model (see section 1).
+- **With the same information, LightGBM and LEAR are level.** LEAR-B2 is even slightly ahead on both years (17.0 vs 17.3 €/MWh on the test, p = 0.46; 12.8 vs 13.5 on validation, p = 0.07). LightGBM's only clear edge is on negative-price hours on validation (10.1 vs 13.0 €/MWh, p < 0.001), and it does not hold on the test (18.2 vs 18.9, p = 0.79). The information matters more than the model (see section 1).
 - **Chronos-2 with fundamentals is the best model overall** (14.4) and at the evening peak. On negative-price hours, LightGBM's 18.2 against 19.6 €/MWh is a statistical tie (p = 0.85). The comparison fixed before the test run, with weekly LightGBM, gives the same verdict (+3.64 €/MWh, p < 0.001).
 
 ### 4. Normalising the target by the gas-plant cost
@@ -292,7 +294,7 @@ The merit-order picture behind these results:
 1. **Fundamentals beat history.** French load and renewables forecasts cut the error by about a fifth on top of price lags. On negative-price hours the gain was a quarter on validation but only 13 % on the test year, so it is less stable than the overall gain.
 2. **Gas increasingly fails to set the French price.** The average spread between price and CCGT cost went from +1 to +4 €/MWh (2019–2022) to −31 to −35 €/MWh (2024–2026), as nuclear recovered and solar grew. Normalising by gas cost protects against fuel shocks, but tells less and less about everyday prices, and on the test year it even hurt on negative-price hours, where gas plays no role.
 3. **Model freshness is a first-order choice.** Retraining daily instead of monthly is worth 2.5 €/MWh on the test year and costs about 8 seconds a day in production.
-4. **The information matters more than the model.** With the same information and daily retraining, LightGBM beats LEAR by 0.9 €/MWh on the test (p = 0.02) and 0.8 on validation (p = 0.07). Its edge per hour is largest on negative-price hours (18.2 vs 22.1 €/MWh), where non-linearity helps, and nil at the evening peak (18.3 vs 18.1). Gas, CO₂ and German data cut LEAR's error by more: 1.6 to 2.3 €/MWh.
+4. **The information matters more than the model.** With the same information and daily retraining, a linear model with a well-chosen penalty (LEAR) is level with LightGBM on both years. Gas, CO₂ and German data, by contrast, cut the error of both models by about 0.9 €/MWh on the test. Non-linearity only paid off on validation's negative-price hours.
 5. **In-context foundation models are a serious contender.** Fed the same fundamentals, a zero-shot model, never trained on this market, beat a gradient-boosting model trained on seven years of French data by 17 %. It adapts to the latest weeks of data at every forecast, but it can overshoot extreme renewables hours.
 6. **Correcting yesterday's bias is the cheapest win; forgetting the past is the riskiest.** A recent-error correction is worth 1.2 €/MWh. Down-weighting old data helps ordinary hours, but it erases the seasonal memory needed for negative prices.
 
@@ -310,7 +312,8 @@ The merit-order picture behind these results:
   - It could not be checked on the validation year.
   - The B2 daily vs Chronos-2 comparison was not fixed in advance; the one that was, with weekly B2, gives the same verdict.
 - **One test year.** The main results use fixed hyperparameters; tuning was tried afterwards, on validation only, and changed little (see [Post-hoc hyperparameter tuning](#post-hoc-hyperparameter-tuning)). The negative-hour statistics rest on 513 (validation) and 565 (test) hours.
-- **Many tests.** About 40 pairs are tested per period, plus exploratory tests by regime: a single p-value near 0.05 is weak evidence on its own. The headline comparisons have p ≤ 0.02 on the test year and, where they were also run on validation, the same sign there.
+- **Many tests.** About 40 pairs are tested per period, plus exploratory tests by regime: a single p-value near 0.05 is weak evidence on its own. The differences given as headlines have p ≤ 0.03 on the test year and, where they were also run on validation, the same sign there.
+- **LEAR was corrected after the test run.** The first implementation chose the LASSO penalty with a noise-variance estimate taken from another calibration window, on a scale about a hundred times larger. The short windows were then barely penalised and overfitted, and their forecasts occasionally exploded (up to 32,721 €/MWh, against a maximum actual price of 391). The fix restores the paper's reference estimation, checked against its code. It was decided by fidelity to the paper, not by the results, and it reversed one conclusion: LightGBM had seemed to beat LEAR-B2 by 0.9 €/MWh (p = 0.02); the two are now level. Earlier test MAEs: LEAR 20.5, LEAR-B2 18.2.
 - **LEAR-B2 and the weekly ablation steps A1 and A2 were added after the test year had been run**, in answer to a review: they isolate the model effect in the LEAR comparison and put the whole ablation at one retraining pace. Their design and comparisons were fixed before they were run, and no choice depends on them.
 - **The post-test extension was motivated by a test result.** Each idea was developed and chosen on validation, but the test year has now been used more than once, so its test figures are less clean than the main results.
 - The gas pass-through weights w(RL) are estimated before the validation year and **drift over time** (0.26 at low residual load in 2024 against 0.5–0.8 before).

@@ -16,7 +16,7 @@ venv/
 .ipynb_checkpoints/
 
 # Data (rebuilt by src/get_data.py)
-data/
+/data/
 
 # Editor
 .vscode/

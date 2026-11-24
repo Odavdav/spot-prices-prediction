@@ -106,21 +106,24 @@ def fig_information():
 
 # --------------------------------------------------------------------- 03. retraining pace
 def fig_retraining():
-    """Same information, retraining every month, week or day (LightGBM B2 and LEAR)."""
+    """Retraining every month, week or day, each model with fixed information (LightGBM B2, LEAR B1)."""
     rows = []
     for period in ("validation", "test"):
         m = _metrics(period)[("all", "MAE")]
         for fam, names in {"LightGBM B2": ["B2", "B2_weekly", "B2_daily"],
-                           "LEAR": ["LEAR_monthly", "LEAR_weekly", "LEAR_daily"]}.items():
+                           "LEAR (B1)": ["LEAR_monthly", "LEAR_weekly", "LEAR_daily"]}.items():
             rows += [(period, fam, freq, m[n]) for freq, n in zip(["Monthly", "Weekly", "Daily"], names)]
     d = pd.DataFrame(rows, columns=["period", "model", "freq", "mae"])
     fig, axes = plt.subplots(1, 2, figsize=(9, 3.8), sharey=True)
     for ax, period in zip(axes, ["validation", "test"]):
-        for fam, color in [("LightGBM B2", BLUE), ("LEAR", AQUA)]:
+        last = d[(d.period == period) & (d.freq == "Daily")].set_index("model").mae
+        for fam, color in [("LightGBM B2", BLUE), ("LEAR (B1)", AQUA)]:
             s = d[(d.period == period) & (d.model == fam)]
             ax.plot(s.freq, s.mae, color=color, lw=2, marker="o", ms=8, label=fam)
-            ax.annotate(fam, (2, s.mae.iloc[-1]), xytext=(8, 0), textcoords="offset points",
-                        va="center", color=INK_2, fontsize=9)
+            # direct label, pushed apart from the other one when the two end points are close
+            dy = 7 if last[fam] == last.max() else -7
+            ax.annotate(fam, (2, last[fam]), xytext=(8, dy if last.max() - last.min() < 0.5 else 0),
+                        textcoords="offset points", va="center", color=INK_2, fontsize=9)
         ax.set_title(f"{period.capitalize()} ({PERIODS[period][0][:7]} → {PERIODS[period][1][:7]})")
         ax.set_xlim(-0.3, 2.9)
     axes[0].set_ylabel("MAE (€/MWh)")

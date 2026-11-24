@@ -17,24 +17,31 @@ LEAR-B2 — same model with the information of step B2 added: German price of th
 German load and wind + solar forecasts for D, and the CCGT SRMC for D (TTF and EUA closes from D-2).
 The target stays the raw price; the SRMC is an input. Re-estimated daily.
 
-Departures from the original paper:
-- Short windows (56 and 84 days < 247 inputs): recent scikit-learn then requires an estimate of
-  the noise variance for the AIC; the one of the 1456-day model at the same hour is reused.
-- Monthly and weekly versions in addition to the daily version of the paper, to compare with
-  LightGBM at the same re-estimation pace.
-As in the paper, forecasts are not clipped: when inputs leave the calibration range, the sinh
-back-transform can produce extreme values (see `backtest.plausible` for the robustness check).
+Estimation follows the reference code of the paper (epftoolbox, `LEAR.recalibrate`), which ran on
+scikit-learn <= 0.24:
+- a window of N days holds N - 7 training days (its first week only provides the D-7 lags);
+- the penalty is chosen by `LassoLarsIC(criterion="aic")` with that version's defaults: inputs
+  normalised to unit norm, and the noise variance in the AIC taken as the variance of the target
+  (later versions estimate it by OLS, which fails when days < inputs, as in the 56- and 84-day
+  windows; it is therefore passed explicitly);
+- a `Lasso` with that penalty is then fitted on the (asinh-scaled, not normalised) inputs.
+`tests/test_lear_reference.py` checks that this reproduces the reference code run under
+scikit-learn 0.24.2. Forecasts are not clipped, as in the paper.
+
+Departure from the paper: monthly and weekly versions in addition to the daily one, to compare with
+LightGBM at the same re-estimation pace.
 """
 import time
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LassoLarsIC
+from sklearn.linear_model import Lasso, LassoLarsIC
 from statsforecast.models import MSTL
 
 from src.config import TZ
 
-LEAR_WINDOWS = (1456, 1092, 84, 56)   # longest first: it provides the noise variance
+LEAR_WINDOWS = (1456, 1092, 84, 56)
+LEAR_LAG_DAYS = 7     # first week of each window: lags only (as in epftoolbox)
 MSTL_WEEKS = 8
 
 
@@ -110,36 +117,45 @@ def _lear_design(f: pd.DataFrame, extended: bool = False):
     return X, dummies, price, day, hour
 
 
-def _robust_asinh(train: np.ndarray, apply: np.ndarray):
-    """Scaling by median and MAD (computed on `train`), then asinh."""
-    med = np.nanmedian(train, axis=0)
-    mad = np.nanmedian(np.abs(train - med), axis=0) / 0.6745
-    mad = np.where(mad > 0, mad, 1.0)
-    return np.arcsinh((train - med) / mad), np.arcsinh((apply - med) / mad), med, mad
+def _median_mad(a: np.ndarray):
+    """Column medians and MADs (normal-consistent, as statsmodels' `mad`); a zero MAD is set to 1."""
+    med = np.median(a, axis=0)
+    mad = np.median(np.abs(a - med), axis=0) / 0.6744897501960817
+    return med, np.where(mad > 0, mad, 1.0)
+
+
+def lear_one_window(Xt: np.ndarray, Dt: np.ndarray, Yt: np.ndarray,
+                    Xp: np.ndarray, Dp: np.ndarray) -> np.ndarray:
+    """One LEAR calibration (24 hourly models) as in epftoolbox's `LEAR.recalibrate` and `predict`.
+
+    Xt, Yt: inputs and prices (days × 24) of the training days; Dt, Dp: weekday dummies (not
+    scaled); Xp: inputs of the days to forecast. Returns the forecasts (days × 24), in €/MWh."""
+    my, sy = _median_mad(Yt)
+    mx, sx = _median_mad(Xt)
+    Ys = np.arcsinh((Yt - my) / sy)
+    Xt = np.hstack([np.arcsinh((Xt - mx) / sx), Dt])
+    Xp = np.hstack([np.arcsinh((Xp - mx) / sx), Dp])
+    centred = Xt - Xt.mean(axis=0)
+    norm = np.sqrt((centred ** 2).sum(axis=0))
+    Xn = centred / np.where(norm > 0, norm, 1.0)     # normalize=True of scikit-learn <= 0.24
+    out = np.empty((len(Xp), 24))
+    for h in range(24):
+        y = Ys[:, h]
+        alpha = LassoLarsIC(criterion="aic", max_iter=2500, noise_variance=np.var(y)).fit(Xn, y).alpha_
+        out[:, h] = Lasso(alpha=alpha, max_iter=2500).fit(Xt, y).predict(Xp)
+    return np.sinh(out) * sy + my
 
 
 def _lear_fit_predict(X, dummies, price, fit_day, predict_days):
     """Calibrate the 4 windows × 24 hours on days < fit_day, forecast `predict_days` (days × 24)."""
     valid = X.notna().all(axis=1) & price.notna().all(axis=1)
     hist = valid.index[(valid.index < fit_day) & valid.to_numpy()]
-    Xp_raw = X.loc[predict_days].to_numpy()
-    Dp = dummies.loc[predict_days].to_numpy()
     preds = []
-    noise = {}
     for w in LEAR_WINDOWS:
-        tr = hist[-w:]
-        Xt, Xp, _, _ = _robust_asinh(X.loc[tr].to_numpy(), Xp_raw)
-        Xt = np.hstack([Xt, dummies.loc[tr].to_numpy()])
-        Xp = np.hstack([Xp, Dp])
-        p = np.empty((len(predict_days), 24))
-        for h in range(24):
-            yt, _, med, mad = _robust_asinh(price.loc[tr, h].to_numpy(), np.zeros(1))
-            kw = {"noise_variance": noise[h]} if len(tr) <= Xt.shape[1] else {}
-            m = LassoLarsIC(criterion="aic", **kw).fit(Xt, yt)
-            if not kw:
-                noise.setdefault(h, m.noise_variance_)
-            p[:, h] = np.sinh(m.predict(Xp)) * mad + med
-        preds.append(p)
+        tr = hist[-(w - LEAR_LAG_DAYS):]
+        preds.append(lear_one_window(X.loc[tr].to_numpy(), dummies.loc[tr].to_numpy(),
+                                     price.loc[tr].to_numpy(), X.loc[predict_days].to_numpy(),
+                                     dummies.loc[predict_days].to_numpy()))
     return pd.DataFrame(np.mean(preds, axis=0), index=predict_days, columns=range(24))
 
 
