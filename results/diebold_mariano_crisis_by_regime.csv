@@ -1,0 +1,13 @@
+,,MAE_gap,t_HAC,p_value,days,lags_NW
+negative,B2 vs naive_d7,-25.7166,-1.8713,0.0613,8.0,2.0
+negative,B2 vs B2_raw,14.4502,3.9388,0.0001,8.0,2.0
+negative,B2_rl vs B2,-9.2995,-2.1926,0.0283,8.0,2.0
+negative,B2_rl vs B2_raw,5.1507,1.6607,0.0968,8.0,2.0
+evening_peak,B2 vs naive_d7,-29.5973,-7.0792,0.0,549.0,5.0
+evening_peak,B2 vs B2_raw,-9.2771,-4.4596,0.0,549.0,5.0
+evening_peak,B2_rl vs B2,-0.1706,-0.2496,0.8029,549.0,5.0
+evening_peak,B2_rl vs B2_raw,-9.4476,-4.3595,0.0,549.0,5.0
+other,B2 vs naive_d7,-30.8576,-8.1063,0.0,549.0,5.0
+other,B2 vs B2_raw,-6.0946,-4.1831,0.0,549.0,5.0
+other,B2_rl vs B2,0.9513,1.7572,0.0789,549.0,5.0
+other,B2_rl vs B2_raw,-5.1432,-3.4163,0.0006,549.0,5.0

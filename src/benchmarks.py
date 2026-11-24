@@ -17,11 +17,13 @@ LEAR-B2 — same model with the information of step B2 added: German price of th
 German load and wind + solar forecasts for D, and the CCGT SRMC for D (TTF and EUA closes from D-2).
 The target stays the raw price; the SRMC is an input. Re-estimated daily.
 
-Departures from the original, to be documented:
+Departures from the original paper:
 - Short windows (56 and 84 days < 247 inputs): recent scikit-learn then requires an estimate of
   the noise variance for the AIC; the one of the 1456-day model at the same hour is reused.
 - Monthly and weekly versions in addition to the daily version of the paper, to compare with
   LightGBM at the same re-estimation pace.
+As in the paper, forecasts are not clipped: when inputs leave the calibration range, the sinh
+back-transform can produce extreme values (see `backtest.plausible` for the robustness check).
 """
 import time
 

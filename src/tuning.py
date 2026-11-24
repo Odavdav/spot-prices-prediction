@@ -1,17 +1,18 @@
 """Hyperparameter tuning of LightGBM, on the validation year only.
 
 Protocol (fixed before the search):
-1. Random search over SPACE for step B2 with weekly retraining, on the validation year.
-   Objective: MAE on all hours. Trial 0 is the current setting (LGB_PARAMS).
+1. Random search (space in `sample`) for step B2 with weekly retraining, on the validation year,
+   for as many trials as fit before a clock time. Objective: MAE on all hours. Trial 0 is the
+   default setting (LGB_PARAMS): it must reproduce the MAE of B2_weekly.
 2. The best configuration is applied unchanged to the daily models on validation and test:
    B2_daily_tuned, and B3_daily_hl90_tuned (then its error correction). Their test figures
-   are reported whatever they are.
+   are reported whatever they are. Their validation figures are in-sample for the search.
 
 Usage:
     python -m src.tuning search --worker 0 --workers 3 --until 03:30   # one worker of the search
     python -m src.tuning summary                                       # results/tuning_validation.csv
     python -m src.tuning final --period test --model B2_daily_tuned
-    python -m src.tuning final --period test --model B3_daily_hl90_tuned --chunk 0   # 0, 1, 2 in parallel
+    python -m src.tuning final --period test --model B3_daily_hl90_tuned --chunk 0   # chunks 0-2 in parallel
     python -m src.tuning merge --period test --model B3_daily_hl90_tuned
 """
 import argparse
@@ -30,6 +31,7 @@ TRIALS_DIR = DATA_PROCESSED / "tuning"   # one JSON per trial, so that workers n
 PARTS_DIR = TRIALS_DIR / "parts"         # slices of a final run, merged afterwards
 N_JOBS = 2                               # faster than all cores on this machine (efficiency cores)
 FINAL_MODELS = {"B2_daily_tuned": ("B2", None), "B3_daily_hl90_tuned": ("B3", 90)}
+N_CHUNKS = 3                             # slices of a period for parallel final runs (4 months each)
 
 
 def sample(trial: int) -> dict:
@@ -102,7 +104,7 @@ def summary():
     print(t[keep].head(10).round(3).to_string(index=False))
 
 
-def final(period: str, model: str, chunk: int | None = None, chunks: int = 3):
+def final(period: str, model: str, chunk: int | None = None):
     """Daily walk-forward with the best configuration. With `chunk`, only that slice of the period's
     months (days are independent fits, so slices can run in parallel, one core each; see `merge`)."""
     step, half_life = FINAL_MODELS[model]
@@ -114,15 +116,15 @@ def final(period: str, model: str, chunk: int | None = None, chunks: int = 3):
         save_prediction(period, pred.rename(model))
         return
     bounds = pd.date_range(start, end, freq="MS")
-    bounds = [bounds[round(i * (len(bounds) - 1) / chunks)] for i in range(chunks + 1)]
+    bounds = [bounds[round(i * (len(bounds) - 1) / N_CHUNKS)] for i in range(N_CHUNKS + 1)]
     pred = walk_forward(f, step, f"{bounds[chunk]:%Y-%m-%d}", f"{bounds[chunk + 1]:%Y-%m-%d}",
                         refit="daily", half_life=half_life, params={**params, "n_jobs": 1})
     PARTS_DIR.mkdir(parents=True, exist_ok=True)
     pred.rename(model).to_frame().to_parquet(PARTS_DIR / f"{model}_{period}_{chunk}.parquet")
 
 
-def merge(period: str, model: str, chunks: int = 3):
-    parts = [pd.read_parquet(PARTS_DIR / f"{model}_{period}_{i}.parquet")[model] for i in range(chunks)]
+def merge(period: str, model: str):
+    parts = [pd.read_parquet(PARTS_DIR / f"{model}_{period}_{i}.parquet")[model] for i in range(N_CHUNKS)]
     save_prediction(period, pd.concat(parts).sort_index())
 
 
@@ -137,7 +139,7 @@ def main():
     fi = sub.add_parser("final")
     fi.add_argument("--period", choices=list(PERIODS), required=True)
     fi.add_argument("--model", choices=list(FINAL_MODELS), required=True)
-    fi.add_argument("--chunk", type=int, help="run only this slice of the period (0, 1 or 2)")
+    fi.add_argument("--chunk", type=int, choices=range(N_CHUNKS), help="run only this slice of the period")
     me = sub.add_parser("merge")
     me.add_argument("--period", choices=list(PERIODS), required=True)
     me.add_argument("--model", choices=list(FINAL_MODELS), required=True)

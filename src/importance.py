@@ -8,7 +8,6 @@ spread to the cost of a CCGT; the SRMC level itself is added back afterwards and
 Usage: python -m src.importance
 """
 import lightgbm as lgb
-import numpy as np
 import pandas as pd
 
 from src.backtest import LGB_PARAMS, regime

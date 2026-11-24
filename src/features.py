@@ -17,7 +17,8 @@ import holidays
 import numpy as np
 import pandas as pd
 
-TZ = "Europe/Paris"
+from src.config import TZ
+
 GATE_CLOSURE_HOUR = 12  # SDAC gate closure: 12:00 Paris time, on D-1
 
 # --------------------------------------------------------------------- source register
@@ -124,7 +125,6 @@ STEPS["B2_rl"] = STEPS["B2"]
 # Normalisation of the target and of €/MWh features, by step:
 #   "full": price − SRMC;  "rl": price − w(RL) × SRMC;  absent: raw price.
 NORMALIZATION = {"B2": "full", "B2_rl": "rl", "B3": "full"}
-NORMALIZED_STEPS = set(NORMALIZATION)
 PRICE_LEVEL_FEATURES = ["price_d1", "price_d2", "price_d7", "price_d1_mean", "price_d1_min",
                         "price_d1_max", "de_price_d1", "de_price_d1_mean"]
 
@@ -307,7 +307,7 @@ def get_X(df: pd.DataFrame, step: str) -> pd.DataFrame:
     otherwise the inputs would keep the level problem that the target no longer has.
     """
     X = df[STEPS[step]].copy()
-    if step in NORMALIZED_STEPS:
+    if step in NORMALIZATION:
         offset = srmc_offset(df, step)
         for c in PRICE_LEVEL_FEATURES:
             if c in X:

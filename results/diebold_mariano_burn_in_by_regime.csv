@@ -1,0 +1,7 @@
+,,MAE_gap,t_HAC,p_value,days,lags_NW
+negative,B2_weekly_hl90 vs B2_weekly,-2.2501,-3.249,0.0012,74.0,3.0
+negative,B3_weekly vs B2_weekly,-0.3579,-0.518,0.6045,74.0,3.0
+evening_peak,B2_weekly_hl90 vs B2_weekly,-0.0926,-0.2507,0.802,366.0,5.0
+evening_peak,B3_weekly vs B2_weekly,-0.3168,-1.1103,0.2669,366.0,5.0
+other,B2_weekly_hl90 vs B2_weekly,-0.3925,-1.7642,0.0777,366.0,5.0
+other,B3_weekly vs B2_weekly,-0.2048,-0.9497,0.3423,366.0,5.0

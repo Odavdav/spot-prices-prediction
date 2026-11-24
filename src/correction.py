@@ -22,8 +22,8 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import QuantileRegressor
 
-from src.backtest import PREDICTIONS_DIR, save_prediction
-from src.config import PERIODS, TZ
+from src.backtest import save_prediction
+from src.config import PERIODS, PREDICTIONS_DIR, TZ
 from src.data import load_dataset
 
 FEATURES = ["err_d1", "err_d1_mean", "err_7d_hour", "err_7d_mean"]

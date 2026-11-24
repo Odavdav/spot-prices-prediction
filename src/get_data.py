@@ -1,4 +1,5 @@
-"""
+"""Download the raw data (ENTSO-E, TTF, EUA) and build the hourly dataset.
+
 Usage:
     cp .env.example .env  then set ENTSOE_API_KEY in it (read automatically)
     python -m src.get_data                   # 2018-10-01 -> today
@@ -17,7 +18,6 @@ import argparse
 import os
 import time
 from pathlib import Path
-from src.config import DATA_PROCESSED, DATASET_PATH, ROOT
 
 import pandas as pd
 import yfinance as yf
@@ -25,9 +25,9 @@ from dotenv import load_dotenv
 from entsoe import EntsoePandasClient
 from entsoe.exceptions import NoMatchingDataError
 
+from src.config import DATA_PROCESSED, DATASET_PATH, ROOT, TZ
+
 RAW = ROOT / "data" / "raw"
-OUT = DATA_PROCESSED
-TZ = "Europe/Paris"
 
 FR = "FR"
 # 'DE' = Germany (national control area), for load and renewables forecasts.
@@ -227,7 +227,7 @@ def main():
     start = pd.Timestamp(args.start, tz=TZ)
     end = pd.Timestamp(args.end, tz=TZ) if args.end else pd.Timestamp.now(tz=TZ).normalize() + pd.Timedelta(days=1)
     RAW.mkdir(parents=True, exist_ok=True)
-    OUT.mkdir(parents=True, exist_ok=True)
+    DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
 
     client = EntsoePandasClient(api_key=key)
     raw = {"price_da": fetch(client, "price_da", FR, start, end),
@@ -241,7 +241,7 @@ def main():
     df = build_dataset(raw, ttf, eua)
     df.to_parquet(DATASET_PATH)
     report(df)
-    print(f"\nWritten: {OUT / 'dataset_hourly.parquet'}")
+    print(f"\nWritten: {DATASET_PATH}")
 
 
 if __name__ == "__main__":

@@ -4,16 +4,18 @@ Reference categorical palette, fixed order: blue = LightGBM (main model), orange
 aqua = LEAR, yellow = final extension model, gray = other; actual price in black.
 Each figure answers one question and varies one thing (information, retraining pace, model, target).
 
-Usage: python -m src.figures   (after src.backtest --period test and src.importance)
+Usage: python -m src.figures   (after the backtests of every period: figures read results/*.csv
+and the saved test forecasts; the SHAP figures retrain the main model once)
 """
 import matplotlib
 
 matplotlib.use("Agg")
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from src.backtest import NAIVE, load_predictions, regime
+from src.backtest import load_predictions, regime
 from src.config import PERIODS, RESULTS, TZ
 from src.data import load_dataset
 from src.features import add_features
@@ -24,17 +26,10 @@ FIG = RESULTS / "figures"
 # Palette (reference instance, light mode)
 SURFACE, INK, INK_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 BLUE, ORANGE, AQUA, YELLOW, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#b9b8b2"
-MODEL_COLORS = {"B2_daily": BLUE, "Chronos2_fund": ORANGE, "LEAR_B2_daily": AQUA,
-                "B3_daily_hl90_corr": YELLOW}
-
-LABELS = {
-    "naive_d7": "Naive D-7", "naive_d1": "Naive D-1", "A1": "A1 calendar", "A2": "A2 + price lags",
-    "B1": "B1 + FR fundamentals", "B2": "B2 + gas, CO2, DE", "B2_daily": "B2, daily retraining",
-    "B2_weekly": "B2, weekly retraining", "MSTL": "MSTL", "LEAR_daily": "LEAR (daily)", "LEAR_B2_daily": "LEAR-B2 (daily)",
-    "Chronos2_prices": "Chronos-2, prices only", "Chronos2_fund": "Chronos-2 + fundamentals",
-    "B2_daily_corr": "B2 daily + error correction*",
-    "B3_daily_hl90_corr": "B3 daily + recency + correction*",
-}
+# Models of the test-week figure: name -> (label, color)
+WEEK_MODELS = {"B2_daily": ("LightGBM B2 (daily)", BLUE),
+               "Chronos2_fund": ("Chronos-2 + fundamentals", ORANGE),
+               "LEAR_B2_daily": ("LEAR-B2 (daily)", AQUA)}
 
 plt.rcParams.update({
     "figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "savefig.facecolor": SURFACE,
@@ -53,7 +48,19 @@ def _save(fig, name):
     print(f"  {name}")
 
 
-# --------------------------------------------------------------------- 1. merit order
+# --------------------------------------------------------------------- helpers
+def _metrics(period):
+    return pd.read_csv(RESULTS / f"metrics_{period}.csv", header=[0, 1], index_col=0)
+
+
+def _bar_labels(ax, bars, fmt="{:.1f}"):
+    for b in bars:
+        ax.annotate(fmt.format(b.get_height()), (b.get_x() + b.get_width() / 2, b.get_height()),
+                    xytext=(0, 2), textcoords="offset points", ha="center", va="bottom",
+                    fontsize=8, color=INK_2)
+
+
+# --------------------------------------------------------------------- 01. merit order
 def fig_merit_order(f):
     """Price against forecast residual load, 2024-2026, with the median SRMC."""
     d = f[f["time_local"] >= pd.Timestamp("2024-01-01", tz=TZ)].dropna(subset=["fr_residual_fc", "price_da"])
@@ -73,18 +80,7 @@ def fig_merit_order(f):
     _save(fig, "01_merit_order.png")
 
 
-# --------------------------------------------------------------------- 2. information blocks
-def _metrics(period):
-    return pd.read_csv(RESULTS / f"metrics_{period}.csv", header=[0, 1], index_col=0)
-
-
-def _bar_labels(ax, bars, fmt="{:.1f}"):
-    for b in bars:
-        ax.annotate(fmt.format(b.get_height()), (b.get_x() + b.get_width() / 2, b.get_height()),
-                    xytext=(0, 2), textcoords="offset points", ha="center", va="bottom",
-                    fontsize=8, color=INK_2)
-
-
+# --------------------------------------------------------------------- 02. information blocks
 def fig_information():
     """Ablation: one block of information added at a time (LightGBM, weekly retraining)."""
     steps = [("A1_weekly", "Calendar"), ("A2_weekly", "+ price lags"), ("B1_weekly", "+ FR\nfundamentals"),
@@ -108,7 +104,33 @@ def fig_information():
     _save(fig, "02_information.png")
 
 
-# --------------------------------------------------------------------- 4. models at equal information
+# --------------------------------------------------------------------- 03. retraining pace
+def fig_retraining():
+    """Same information, retraining every month, week or day (LightGBM B2 and LEAR)."""
+    rows = []
+    for period in ("validation", "test"):
+        m = _metrics(period)[("all", "MAE")]
+        for fam, names in {"LightGBM B2": ["B2", "B2_weekly", "B2_daily"],
+                           "LEAR": ["LEAR_monthly", "LEAR_weekly", "LEAR_daily"]}.items():
+            rows += [(period, fam, freq, m[n]) for freq, n in zip(["Monthly", "Weekly", "Daily"], names)]
+    d = pd.DataFrame(rows, columns=["period", "model", "freq", "mae"])
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.8), sharey=True)
+    for ax, period in zip(axes, ["validation", "test"]):
+        for fam, color in [("LightGBM B2", BLUE), ("LEAR", AQUA)]:
+            s = d[(d.period == period) & (d.model == fam)]
+            ax.plot(s.freq, s.mae, color=color, lw=2, marker="o", ms=8, label=fam)
+            ax.annotate(fam, (2, s.mae.iloc[-1]), xytext=(8, 0), textcoords="offset points",
+                        va="center", color=INK_2, fontsize=9)
+        ax.set_title(f"{period.capitalize()} ({PERIODS[period][0][:7]} → {PERIODS[period][1][:7]})")
+        ax.set_xlim(-0.3, 2.9)
+    axes[0].set_ylabel("MAE (€/MWh)")
+    axes[0].legend(loc="upper right")
+    fig.suptitle("Retraining more often helps both model families", x=0.01, ha="left", fontweight="bold")
+    fig.tight_layout()
+    _save(fig, "03_retraining.png")
+
+
+# --------------------------------------------------------------------- 04. models at equal information
 def fig_models():
     """Test year, daily updates: price-only models, then three models with B2's information."""
     rows = [("MSTL", "MSTL", GRAY, 1), ("Chronos2_prices", "Chronos-2", ORANGE, 0.45),
@@ -140,7 +162,7 @@ def fig_models():
     _save(fig, "04_models.png")
 
 
-# --------------------------------------------------------------------- 5. normalisation by the gas cost
+# --------------------------------------------------------------------- 05. normalisation by the gas cost
 def fig_normalisation():
     """Raw-price target vs price − SRMC vs residual-load-weighted SRMC, by period."""
     targets = [("raw", "Raw price", GRAY), ("full", "Price − SRMC", BLUE), ("rl", "Price − w(RL) × SRMC", "#8fb8ea")]
@@ -169,7 +191,7 @@ def fig_normalisation():
     _save(fig, "05_normalisation.png")
 
 
-# --------------------------------------------------------------------- 6. post-test extension
+# --------------------------------------------------------------------- 06. post-test extension
 def fig_extension():
     """From the main model to the final model, one ingredient at a time (test year, daily)."""
     steps = [("B2_daily", "B2 daily\n(main model)", BLUE), ("B2_daily_corr", "+ error\ncorrection", GRAY),
@@ -195,53 +217,29 @@ def fig_extension():
     _save(fig, "06_extension.png")
 
 
-# --------------------------------------------------------------------- 3. retraining pace
-def fig_retraining():
-    rows = []
-    for period in ("validation", "test"):
-        m = pd.read_csv(RESULTS / f"metrics_{period}.csv", header=[0, 1], index_col=0)[("all", "MAE")]
-        for fam, names in {"LightGBM B2": ["B2", "B2_weekly", "B2_daily"],
-                           "LEAR": ["LEAR_monthly", "LEAR_weekly", "LEAR_daily"]}.items():
-            rows += [(period, fam, freq, m[n]) for freq, n in zip(["Monthly", "Weekly", "Daily"], names)]
-    d = pd.DataFrame(rows, columns=["period", "model", "freq", "mae"])
-    fig, axes = plt.subplots(1, 2, figsize=(9, 3.8), sharey=True)
-    for ax, period in zip(axes, ["validation", "test"]):
-        for fam, color in [("LightGBM B2", BLUE), ("LEAR", AQUA)]:
-            s = d[(d.period == period) & (d.model == fam)]
-            ax.plot(s.freq, s.mae, color=color, lw=2, marker="o", ms=8, label=fam)
-            ax.annotate(fam, (2, s.mae.iloc[-1]), xytext=(8, 0), textcoords="offset points",
-                        va="center", color=INK_2, fontsize=9)
-        ax.set_title(f"{period.capitalize()} ({PERIODS[period][0][:7]} → {PERIODS[period][1][:7]})")
-        ax.set_xlim(-0.3, 2.9)
-    axes[0].set_ylabel("MAE (€/MWh)")
-    axes[0].legend(loc="upper right")
-    fig.suptitle("Retraining more often helps both model families", x=0.01, ha="left", fontweight="bold")
-    fig.tight_layout()
-    _save(fig, "03_retraining.png")
-
-
-# --------------------------------------------------------------------- 4. one test week
+# --------------------------------------------------------------------- 07. one test week
 def fig_week(f, preds, start="2026-05-04"):
+    """Actual price and three forecasts over one test week."""
     a, b = pd.Timestamp(start, tz=TZ), pd.Timestamp(start, tz=TZ) + pd.Timedelta(days=7)
     m = (f["time_local"] >= a) & (f["time_local"] < b)
     t = f.loc[m, "time_local"]
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t, f.loc[m, "price_da"], color=INK, lw=2.4, label="Actual price")
-    for mo in ["B2_daily", "Chronos2_fund", "LEAR_B2_daily"]:
-        ax.plot(t, preds.loc[f.index[m], mo], color=MODEL_COLORS[mo], lw=1.6, label=LABELS[mo])
+    for mo, (label, color) in WEEK_MODELS.items():
+        ax.plot(t, preds.loc[f.index[m], mo], color=color, lw=1.6, label=label)
     ax.axhline(0, color=INK_2, lw=0.8)
     ax.set_ylabel("€/MWh")
     last = b - pd.Timedelta(days=1)
     ax.set_title(f"One test week ({a:%d %b} – {last:%d %b %Y}): actual price vs forecasts")
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=4)
-    import matplotlib.dates as mdates
     ax.xaxis.set_major_locator(mdates.DayLocator(tz=TZ))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%a %d", tz=TZ))
     _save(fig, "07_test_week.png")
 
 
-# --------------------------------------------------------------------- 5-6. importance
+# --------------------------------------------------------------------- 08-09. feature importance
 def fig_importance():
+    """SHAP importance of the main model (B2), overall and by regime and hour."""
     shap, rows = importance.shap_values()
     mag = shap.abs()
     overall = mag.mean().sort_values()
@@ -283,8 +281,6 @@ def fig_importance():
 def main():
     f = add_features(load_dataset())
     preds = load_predictions("test")
-    for name, col in NAIVE.items():   # naive forecasts are not saved: they are features
-        preds[name] = f.loc[preds.index, col]
     fig_merit_order(f)
     fig_information()
     fig_retraining()

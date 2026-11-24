@@ -5,10 +5,14 @@ is trained on every delivery before that date (expanding window), then forecasts
 the next refit date. Weekly and daily retraining are variants (REFIT_VARIANTS).
 
 Metrics: MAE and rMAE (MAE / MAE of the naive D-7 forecast on the same hours), by regime.
+Significance: Diebold-Mariano tests on the pairs of DM_PAIRS, on all hours, by regime (exploratory)
+and on plausible forecasts only (robustness check for LEAR, see `plausible`).
 
 Usage:
-    python -m src.backtest                    # validation (Nov. 2024 -> Oct. 2025)
+    python -m src.backtest                    # validation (Nov. 2024 -> Oct. 2025), models of RUNS
     python -m src.backtest --period test      # test: only run at the end of the project
+    python -m src.backtest --period test --models B2_daily   # (re)compute some models only
+    python -m src.backtest --period test --models            # only recompute the tables
 """
 import argparse
 
@@ -21,7 +25,8 @@ from src.config import PERIODS, PREDICTIONS_DIR, RESULTS, SEED, TZ
 from src.data import load_dataset
 from src.features import STEPS, add_features, get_X, get_y, to_price
 
-# Fixed hyperparameters, reasonable for ~50,000 rows and ~30 features (no tuning)
+# Hyperparameters of every LightGBM model, fixed before the first run (reasonable defaults for
+# ~50,000 rows and 20-40 features). A post-hoc search on the validation year is in src/tuning.py.
 LGB_PARAMS = dict(
     objective="l1",          # consistent with the MAE; robust to price spikes
     n_estimators=800,
@@ -53,6 +58,21 @@ REFIT_VARIANTS.update({f"B2_weekly_hl{h}": ("B2", "weekly", h) for h in HALF_LIV
 # B3 = B2 + shape of the day + current regime
 REFIT_VARIANTS.update({"B3_weekly": ("B3", "weekly", None), "B3_weekly_hl90": ("B3", "weekly", 90),
                        "B3_daily": ("B3", "daily", None), "B3_daily_hl90": ("B3", "daily", 90)})
+
+# Models run on each period (default of --models). The error corrections (src/correction.py) and the
+# tuned models (src/tuning.py) are run separately. Chronos-2 only on the test year: it may have seen
+# the validation year during pre-training (see benchmarks.py).
+_VALIDATION = (["A1", "A2", "B1", "B2", "B2_raw"]
+               + list(REFIT_VARIANTS)
+               + ["MSTL", "LEAR_monthly", "LEAR_weekly", "LEAR_daily", "LEAR_B2_daily"])
+RUNS = {
+    "validation": _VALIDATION,
+    # Only the half-life chosen on validation (90 days) is run on the test year
+    "test": [m for m in _VALIDATION if m not in ("B2_weekly_hl180", "B2_weekly_hl365")]
+            + ["Chronos2_prices", "Chronos2_fund"],
+    "crisis": ["B2", "B2_raw", "B2_rl"],        # robustness of the SRMC normalisation
+    "burn_in": ["B2_weekly", "B2_weekly_hl90", "B3_weekly", "B3_weekly_hl90"],   # error history
+}
 
 
 def refit_dates(start: str, end: str, refit: str = "monthly") -> list:
@@ -88,56 +108,56 @@ def walk_forward(f: pd.DataFrame, step: str, start: str, end: str, refit: str = 
 
 
 # --------------------------------------------------------------------- Diebold-Mariano test
-# Compared pairs (A, B): chosen in advance to limit multiple testing.
+# Compared pairs (A, B), written down before the runs they test to limit multiple testing; the
+# exceptions are flagged. The git history of this list is the record of when each pair was added.
 DM_PAIRS = [
+    # Main study (fixed before the test year was run)
     ("B2", "naive_d7"),             # does the full model beat the benchmark?
     ("B2", "B2_raw"),               # does the SRMC normalisation change anything?
     ("B2", "LEAR_daily"),           # best LightGBM vs literature benchmark
     ("B1", "LEAR_daily"),           # same information
     ("B1_weekly", "LEAR_weekly"),   # same information and same retraining pace
     ("B2_weekly", "B2"),            # retraining weekly rather than monthly
-    ("B2_weekly", "LEAR_daily"),    # best LightGBM vs best LEAR (added after the weekly runs)
-    ("B2_daily", "B2_weekly"),      # does daily retraining still help? (fixed before the run)
-    ("B2_daily", "LEAR_daily"),     # same pace as the LEAR of the paper (fixed before the run)
+    ("B2_weekly", "LEAR_daily"),    # best LightGBM vs best LEAR (added after the weekly validation runs)
+    ("B2_daily", "B2_weekly"),      # does daily retraining still help?
+    ("B2_daily", "LEAR_daily"),     # same pace as the LEAR of the paper
     ("B2_rl_weekly", "B2_weekly"),  # residual-load-weighted normalisation vs full
     ("B2_rl_weekly", "B2_raw_weekly"),  # ... vs no normalisation
     ("B2_rl", "B2"),                # same at the monthly pace (crisis period)
     ("B2_rl", "B2_raw"),
-    # Post-test additions (developed and chosen on validation): mimic Chronos-2's adaptation
+    ("Chronos2_fund", "Chronos2_prices"),  # do fundamentals help a foundation model?
+    ("B2_weekly", "Chronos2_fund"),        # LightGBM vs foundation model, same information
+    ("LEAR_daily", "LEAR_monthly"),
+    ("B2", "MSTL"),
+    # Added after the test run
+    ("B2_daily", "Chronos2_fund"),  # final main model vs Chronos-2 (chosen after seeing the results)
+    ("Chronos2_prices", "MSTL"),    # the two price-only models
+    # Post-test extension (developed and chosen on validation): mimic Chronos-2's adaptation
     ("B2_weekly_hl90", "B2_weekly"),  # recency weights, 90-day half-life
     ("B2_weekly_hl180", "B2_weekly"),
     ("B2_weekly_hl365", "B2_weekly"),
     ("B2_weekly_corr", "B2_weekly"),  # correction by recent errors
     ("B2_weekly_hl90_corr", "B2_weekly"),       # both combined (chosen half-life: 90 days)
     ("B2_weekly_hl90_corr", "B2_weekly_hl90"),  # does the correction add to the recency weights?
-    # Fixed before running the variants chosen on validation on the test year
     ("B2_daily_corr", "B2_daily"),
     ("B2_daily_corr", "Chronos2_fund"),
     ("B2_weekly_hl90_corr", "Chronos2_fund"),
-    # B3: shape of the day and current regime (fixed before the runs)
-    ("B3_weekly", "B2_weekly"),
+    ("B3_weekly", "B2_weekly"),     # B3: shape of the day and current regime
     ("B3_weekly_corr", "B2_weekly_corr"),
     ("B3_weekly_hl90_corr", "B2_weekly_hl90_corr"),
     ("B3_weekly_corr", "Chronos2_fund"),
     ("B3_weekly_hl90_corr", "Chronos2_fund"),
-    # Daily versions (fixed before the runs)
-    ("B3_daily_corr", "B2_daily"),
+    ("B3_daily_corr", "B2_daily"),  # daily versions
     ("B3_daily_hl90_corr", "B2_daily"),
     ("B3_daily_corr", "Chronos2_fund"),
     ("B3_daily_hl90_corr", "Chronos2_fund"),
-    ("Chronos2_fund", "Chronos2_prices"),  # do fundamentals help a foundation model?
-    ("B2_weekly", "Chronos2_fund"),        # LightGBM vs foundation model, same information
-    ("LEAR_daily", "LEAR_monthly"),
-    # LEAR with the B2 information (fixed before the runs)
-    # Weekly ablation, one block at a time (fixed before the A1/A2 weekly runs)
-    ("A2_weekly", "A1_weekly"),
-    ("B1_weekly", "A2_weekly"),
-    ("B2_weekly", "B1_weekly"),
+    # Added after the test run, in answer to a review (fixed before these runs)
     ("B2_daily", "LEAR_B2_daily"),  # same information and same pace: model effect only
     ("LEAR_B2_daily", "LEAR_daily"),  # do gas, CO2 and Germany help a linear model?
-    ("B2", "MSTL"),
-    ("Chronos2_prices", "MSTL"),   # prices only (added after the test run, for the README)
-    # Hyperparameter tuning (fixed before the search, see src/tuning.py)
+    ("A2_weekly", "A1_weekly"),     # weekly ablation, one block at a time
+    ("B1_weekly", "A2_weekly"),
+    ("B2_weekly", "B1_weekly"),
+    # Post-hoc hyperparameter tuning (fixed before the search, see src/tuning.py)
     ("B2_daily_tuned", "B2_daily"),
     ("B3_daily_hl90_tuned_corr", "B3_daily_hl90_corr"),
     ("B3_daily_hl90_tuned_corr", "Chronos2_fund"),
@@ -170,16 +190,33 @@ def _normal_cdf(x: float) -> float:
     return 0.5 * (1 + erf(x / sqrt(2)))
 
 
-def dm_table(preds: pd.DataFrame, f: pd.DataFrame) -> pd.DataFrame:
+def dm_table(preds: pd.DataFrame, f: pd.DataFrame, hours: pd.Series | None = None) -> pd.DataFrame:
+    """Diebold-Mariano test of every pair of DM_PAIRS available in `preds`, on the hours where both
+    forecasts exist (and, if given, on the `hours` mask only, e.g. one regime)."""
     rows = f.loc[preds.index]
     day = rows["time_local"].dt.strftime("%Y-%m-%d")
     out = {}
     for a, b in DM_PAIRS:
         if a in preds and b in preds:
             ok = preds[[a, b]].notna().all(axis=1) & rows["price_da"].notna()
+            if hours is not None:
+                ok &= hours
             err = preds.loc[ok, [a, b]].sub(rows.loc[ok, "price_da"], axis=0)
             out[f"{a} vs {b}"] = diebold_mariano(err[a], err[b], day[ok])
     return pd.DataFrame(out).T
+
+
+def plausible(preds: pd.DataFrame, f: pd.DataFrame) -> pd.DataFrame:
+    """Forecasts within the largest absolute price of the 365 days before their delivery day (a
+    bound known when forecasting), NaN otherwise.
+
+    Robustness check: LEAR's sinh back-transform occasionally explodes (forecasts of thousands of
+    €/MWh). Tests on these forecasts show whether a conclusion depends on those few hours."""
+    day = f["time_local"].dt.tz_convert(TZ).dt.tz_localize(None).dt.normalize()
+    daily_max = f["price_da"].abs().groupby(day.to_numpy()).max()
+    bound = daily_max.rolling("365D").max().shift(1)            # days D-365 to D-1
+    hourly = pd.Series(bound.reindex(day.loc[preds.index].to_numpy()).to_numpy(), index=preds.index)
+    return preds.where(preds.abs().le(hourly, axis=0))
 
 
 # --------------------------------------------------------------------- metrics
@@ -231,9 +268,9 @@ def main():
     models = list(STEPS) + list(REFIT_VARIANTS) + list(BENCHMARKS)
     ap = argparse.ArgumentParser()
     ap.add_argument("--period", choices=list(PERIODS), default="validation")
-    ap.add_argument("--models", nargs="*", choices=models, default=models,
-                    help="models to (re)compute; the others are read from the saved forecasts "
-                         "(--models with no argument: only recompute the tables)")
+    ap.add_argument("--models", nargs="*", choices=models, default=None,
+                    help="models to (re)compute (default: RUNS[period]); the others are read from the "
+                         "saved forecasts (--models with no argument: only recompute the tables)")
     args = ap.parse_args()
     if args.period == "test":
         print("WARNING: test period. Only run it once the choices are frozen on validation.")
@@ -242,7 +279,7 @@ def main():
     f = add_features(load_dataset())
     in_period = (f["time_local"] >= pd.Timestamp(start, tz=TZ)) & (f["time_local"] < pd.Timestamp(end, tz=TZ))
 
-    for name in args.models:
+    for name in RUNS[args.period] if args.models is None else args.models:
         if name in BENCHMARKS:
             pred = BENCHMARKS[name](f, start, end)
         elif name in STEPS:
@@ -265,6 +302,12 @@ def main():
     table.round(3).to_csv(RESULTS / f"metrics_{args.period}.csv")
     dm = dm_table(preds, f)
     dm.round(4).to_csv(RESULTS / f"diebold_mariano_{args.period}.csv")
+    reg = regime(f.loc[preds.index])   # exploratory: one test per regime and pair
+    by_regime = pd.concat({r: dm_table(preds, f, reg == r) for r in ("negative", "evening_peak", "other")})
+    by_regime.round(4).to_csv(RESULTS / f"diebold_mariano_{args.period}_by_regime.csv")
+    if args.period in ("validation", "test"):   # in the crisis, prices legitimately broke all records
+        dm_table(plausible(preds, f), f).round(4).to_csv(
+            RESULTS / f"diebold_mariano_{args.period}_plausible.csv")
 
     with pd.option_context("display.width", 140, "display.float_format", "{:.2f}".format):
         print(f"\n=== {args.period}: {start} -> {end} ===")

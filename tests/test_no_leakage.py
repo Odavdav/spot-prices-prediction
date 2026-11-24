@@ -1,5 +1,6 @@
-"""Leakage tests: no feature of day D may use information published after SDAC gate closure
-(12:00 on D-1).
+"""Leakage tests: no forecast for day D may use information published after SDAC gate closure
+(12:00 on D-1). Covers the features, the walk-forward split, the benchmarks' inputs (LEAR, MSTL,
+Chronos-2) and the error correction; plus the sign convention of the Diebold-Mariano test.
 
 The tests run on a synthetic dataset: they do not depend on data/ (not versioned).
 Run from the repository root: python -m pytest
@@ -11,6 +12,9 @@ import pytest
 
 from src.features import (ALL_FEATURES, FEATURE_REGISTRY, RAW_PUBLICATION, STEPS, TZ, add_features,
                           get_X, is_known_at_gate_closure, mask_unpublished)
+
+# pandas 2.3 with NumPy >= 2.5 warns inside pd.Timedelta itself (not in this code): silenced here.
+pytestmark = pytest.mark.filterwarnings("ignore:The 'generic' unit for NumPy timedelta:DeprecationWarning")
 
 
 @pytest.fixture(scope="module")
@@ -149,3 +153,79 @@ def test_chronos_gap_filling_uses_only_past_values():
     changed = cov.copy()
     changed.iloc[130:, 0] = 1e6                         # everything after the gap altered
     pdt.assert_frame_equal(filled.iloc[:130], _fill_from_past(changed).iloc[:130])
+
+
+# ------------------------------------------------------------------ 4. backtest and benchmarks
+def test_walk_forward_trains_only_on_past_deliveries(synthetic, monkeypatch):
+    """Each model is fitted on deliveries strictly before the first day it forecasts."""
+    import src.backtest as bt
+    fits = []
+
+    class Recorder:   # stands in for LightGBM: records the training and forecast hours
+        def __init__(self, **params):
+            pass
+
+        def fit(self, X, y, sample_weight=None):
+            fits.append([X.index.max(), None])
+            return self
+
+        def predict(self, X):
+            fits[-1][1] = X.index.min()
+            return np.zeros(len(X))
+
+    monkeypatch.setattr(bt.lgb, "LGBMRegressor", Recorder)
+    f = add_features(synthetic)
+    pred = bt.walk_forward(f, "B3", "2024-03-25", "2024-04-12", refit="weekly", half_life=90, verbose=False)
+    assert len(fits) == 3 and pred.notna().all()
+    assert all(last_train < first_forecast for last_train, first_forecast in fits)
+
+
+def test_mstl_uses_only_past_prices(synthetic):
+    """Scrambling the prices of D and later days must not change the MSTL forecast of D."""
+    from src.benchmarks import mstl_forecasts
+    day, end = "2024-04-08", "2024-04-09"
+    changed = synthetic.copy()
+    changed.loc[(changed["time_local"] >= pd.Timestamp(day, tz=TZ)).to_numpy(), "price_da"] = 1e4
+    pdt.assert_series_equal(mstl_forecasts(synthetic, day, end), mstl_forecasts(changed, day, end))
+
+
+def test_chronos_inputs_use_only_known_values(synthetic, monkeypatch):
+    """Chronos-2 forecasts of D must not depend on the prices of D (French or German) or later,
+    but must see the forecasts for D. The model is replaced by a sum of every input it receives."""
+    import src.benchmarks as bm
+
+    class Tensor(np.ndarray):   # what the pipeline returns: arrays with a .numpy() method
+        def numpy(self):
+            return np.asarray(self)
+
+    class SumOfInputs:
+        def predict_quantiles(self, tasks, prediction_length, quantile_levels, batch_size):
+            total = lambda t: (np.nansum(t["target"])
+                               + sum(np.nansum(v) for v in t.get("past_covariates", {}).values())
+                               + sum(np.nansum(v) for v in t.get("future_covariates", {}).values()))
+            return [np.full((1, prediction_length, 1), total(t)).view(Tensor) for t in tasks], None
+
+    monkeypatch.setattr(bm, "_chronos", lambda: SumOfInputs())
+    f = add_features(synthetic)
+    day, end = "2024-04-08", "2024-04-09"
+    from_d = (f["time_local"] >= pd.Timestamp(day, tz=TZ)).to_numpy()
+    full = bm.chronos_forecasts(f, day, end, covariates=True)
+    prices = f.copy()
+    prices.loc[from_d, ["price_da", "de_price_da"]] = 1e4       # published after gate closure
+    pdt.assert_series_equal(full, bm.chronos_forecasts(prices, day, end, covariates=True))
+    load = f.copy()
+    load.loc[from_d, "fr_load_fc"] += 1.0                        # forecast for D: known, must be used
+    assert not full.equals(bm.chronos_forecasts(load, day, end, covariates=True))
+
+
+def test_diebold_mariano_sign_convention():
+    """Negative gap and t-statistic when the first model has the lower error."""
+    from src.backtest import diebold_mariano
+    rng = np.random.default_rng(3)
+    idx = pd.date_range("2024-01-01", periods=24 * 200, freq="h")
+    day = pd.Series(idx.strftime("%Y-%m-%d"), index=idx)
+    small = pd.Series(rng.normal(0, 1, len(idx)), index=idx)
+    large = pd.Series(rng.normal(0, 3, len(idx)), index=idx)
+    r = diebold_mariano(small, large, day)
+    assert r["MAE_gap"] < 0 and r["t_HAC"] < 0 and r["p_value"] < 0.01
+    assert np.isnan(diebold_mariano(small, small, day)["p_value"])   # identical forecasts

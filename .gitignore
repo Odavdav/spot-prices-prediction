@@ -8,15 +8,15 @@ __pycache__/
 # Secrets
 .env
 
-# Environnements virtuels
+# Virtual environments
 .venv/
 venv/
 
 # Jupyter
 .ipynb_checkpoints/
 
-# Données (régénérables via src/get_data.py)
+# Data (rebuilt by src/get_data.py)
 data/
 
-# Éditeur
+# Editor
 .vscode/
