@@ -6,14 +6,13 @@ information is worth** (calendar → price history → fundamentals → fuels an
 differences statistically, and compares a gradient-boosting model with the literature's linear
 reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
 
-**Headline results (test year, Nov. 2025 – Oct. 2026, run once):**
+**Headline results (test year, Nov. 2025 – Oct. 2026).** The main models were run once on it;
+LEAR-B2, the extension and the tuning were added afterwards (see [limitations](#limitations)).
 
 - The main model (LightGBM with fundamentals, gas and CO₂ costs and German data, retrained daily)
   reaches an MAE of **17.3 €/MWh**, i.e. **44 %** of the naive "same hour last week" error.
-- **Against the literature's linear benchmark (LEAR), the information matters more than the model:**
-  given the same inputs and the same daily retraining, LightGBM beats LEAR by only **0.9 €/MWh**
-  (Diebold-Mariano p = 0.02), while giving LEAR the gas, CO₂ and German data improves it by
-  **1.6 to 2.3 €/MWh**.
+- **The information matters more than the model:** at equal information, LightGBM beats LEAR by
+  only **0.9 €/MWh**, while giving LEAR the gas, CO₂ and German data improves it by **1.6 to 2.3 €/MWh**.
 - **Retraining frequency matters more than the model choice:** retraining LightGBM daily instead of
   monthly cuts its error by 2.5 €/MWh.
 - **A zero-shot foundation model given the same fundamentals does better still** (Chronos-2:
@@ -22,6 +21,11 @@ reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
   (daily retraining). Those ingredients are recent-error correction, recency weights, and day-shape and
   regime features. That closes more than half of the gap, but Chronos-2 stays significantly ahead
   (p = 0.006), and a post-hoc hyperparameter search does not change that.
+
+![Models at equal information](results/figures/04_models.png)
+
+*Test-year MAE of every model updated daily, by group of equal information (details in
+[section 3](#3-which-model-at-equal-information)).*
 
 ---
 
@@ -104,13 +108,13 @@ A search run at the very end produced separate, tuned variants
 - **Naive forecasts** D-1 and D-7. D-7 is the reference for the relative MAE (rMAE).
 - **MSTL** (Bandara, Hyndman and Bergmeir, 2021): the classical statistical baseline. It splits the last 8 weeks of prices into a trend, a daily cycle and a weekly cycle, and extends each of them. Prices only, refitted every day.
 - **LEAR** (Lago et al., 2021, *Applied Energy* 293), the standard linear benchmark of the price-forecasting literature: one LASSO regression per hour, averaged over 56, 84, 1,092 and 1,456-day windows, re-estimated monthly, weekly or daily. Standard LEAR uses the same data as B1: French prices, load and renewables forecasts, and the weekday.
-  - As in the paper, its forecasts are not clipped. LEAR works on an asinh scale, and converting back with sinh occasionally explodes: on the test year, daily LEAR forecast up to 2,090 €/MWh, when the actual price never exceeded 391. LEAR comparisons are therefore also run without the hours where a forecast exceeds, in absolute value, every price of the previous 365 days (`results/diebold_mariano_*_plausible.csv`).
+  - As in the paper and its reference code (`epftoolbox`), forecasts are not clipped. LEAR works on an asinh scale and converts back with sinh, which grows exponentially: when an input leaves the range of the calibration window, the forecast can explode. On the test year, daily LEAR forecast up to 2,090 €/MWh, when the actual price never exceeded 391. LEAR comparisons are therefore also reported without the hours where a forecast exceeds, in absolute value, every price of the previous 365 days: a bound known at forecast time, applied to every model, and set after the test run (`results/diebold_mariano_*_plausible.csv`).
 - **LEAR-B2:** the same model with B2's information added (German price D-1, German load and renewables forecasts, SRMC), re-estimated daily. It isolates the model effect from the information effect. It never explodes on the test year.
 - **Chronos-2** (Amazon, Oct. 2025): a time-series foundation model, pre-trained on a large collection of series from many domains and used here without any training on French prices ("zero-shot"). At each forecast it reads the last 12 weeks of prices, with or without the same fundamentals as B2.
 
 **Protocol (`src/backtest.py`).**
 - **Walk-forward with an expanding window:** the model is retrained on the 1st of each month, every 7 days or every day, on every delivery before that date, and forecasts until the next retraining.
-- **Validation** (Nov. 2024 – Oct. 2025) for every modelling choice; **test** (Nov. 2025 – Oct. 2026) run once at the end; plus a **crisis** robustness period (Jul. 2021 – Dec. 2022).
+- **Validation** (Nov. 2024 – Oct. 2025) for every modelling choice; **test** (Nov. 2025 – Oct. 2026) run once at the end for the main models (later additions are flagged); plus a **crisis** robustness period (Jul. 2021 – Dec. 2022).
 - **Metrics:** MAE and rMAE, overall and by regime: negative-price hours (actual price below zero), evening peak (18:00–22:00), other hours. No MAPE, since prices cross zero.
 - **Significance:** Diebold-Mariano test on daily-averaged absolute-error differences, with Newey-West (HAC) variance (5 lags) and two-sided p-values. The comparison pairs were written down before the runs they test, except where flagged (`DM_PAIRS` in `src/backtest.py`). Tests within a single regime are exploratory.
 
@@ -130,6 +134,10 @@ Diebold-Mariano test, also by regime and without LEAR's exploding hours) are in 
 | **LightGBM B2 (main model)** | B2 | daily | 13.5 | 17.3 (0.44) | **18.2** | 18.3 |
 | LightGBM final (post-test extension) | B3 + error correction | daily | **12.4** | 15.6 (0.39) | 22.9 | **15.7** |
 | **Chronos-2 + fundamentals** | B2 | daily, no training | not run | **14.4 (0.36)** | 19.6 | 15.8 |
+
+B1 and B2 are the information steps of the [ablation](#method). B3 = B2 + day-shape and regime
+features; the error correction learns from the model's recent errors (both are defined in the
+[post-test extension](#post-test-extension-borrowing-from-chronos-2)).
 
 Chronos-2 was released on 17 Oct. 2025, after the validation year had started, so it may have seen
 those prices during pre-training. It was therefore run on the test year only, which it cannot have seen.

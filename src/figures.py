@@ -134,7 +134,7 @@ def fig_retraining():
 def fig_models():
     """Test year, daily updates: price-only models, then three models with B2's information."""
     rows = [("MSTL", "MSTL", GRAY, 1), ("Chronos2_prices", "Chronos-2", ORANGE, 0.45),
-            ("LEAR_B2_daily", "LEAR", AQUA, 1), ("B2_daily", "LightGBM", BLUE, 1),
+            ("LEAR_B2_daily", "LEAR-B2", AQUA, 1), ("B2_daily", "LightGBM", BLUE, 1),
             ("Chronos2_fund", "Chronos-2", ORANGE, 1)]
     y = np.array([5.0, 4.0, 2.4, 1.4, 0.4])            # top to bottom, with a gap between the two groups
     m = _metrics("test")
