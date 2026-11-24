@@ -28,3 +28,5 @@ B2_weekly vs B1_weekly,-1.3487,-3.3707,0.0007,365.0,5.0
 B2_daily vs LEAR_B2_daily,-0.7564,-1.7867,0.074,365.0,5.0
 LEAR_B2_daily vs LEAR_daily,-0.7972,-3.0424,0.0023,365.0,5.0
 B2 vs MSTL,-4.6048,-7.0417,0.0,365.0,5.0
+B2_daily_tuned vs B2_daily,-0.1484,-2.059,0.0395,365.0,5.0
+B3_daily_hl90_tuned_corr vs B3_daily_hl90_corr,-0.0452,-0.8532,0.3935,365.0,5.0

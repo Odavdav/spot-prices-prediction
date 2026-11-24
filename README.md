@@ -31,11 +31,12 @@ reference (LEAR) and a zero-shot time-series foundation model (Chronos-2).
 3. [Method](#method)
 4. [Results](#results)
 5. [Post-test extension: borrowing from Chronos-2](#post-test-extension-borrowing-from-chronos-2)
-6. [What drives the forecasts](#what-drives-the-forecasts)
-7. [Market takeaways](#market-takeaways)
-8. [Limitations](#limitations)
-9. [Reproducing the results](#reproducing-the-results)
-10. [Acknowledgements](#acknowledgements)
+6. [Post-hoc hyperparameter tuning](#post-hoc-hyperparameter-tuning)
+7. [What drives the forecasts](#what-drives-the-forecasts)
+8. [Market takeaways](#market-takeaways)
+9. [Limitations](#limitations)
+10. [Reproducing the results](#reproducing-the-results)
+11. [Acknowledgements](#acknowledgements)
 
 ---
 
@@ -221,6 +222,27 @@ without them did better on the test (15.87, and 17.6 on negative-price hours).
 events. A foundation model that has seen many regimes handles that trade-off better than a
 single-market model.
 
+## Post-hoc hyperparameter tuning
+
+All results above use one fixed LightGBM setting. As a last check, a random search looked for a better
+one **on the validation year only**: 85 settings of tree count, learning rate, leaves, minimum leaf
+size, row and column subsampling and L2 penalty, scored on B2 with weekly retraining (setting 0 = the
+default, as a sanity check). The best setting (3,000 trees, learning rate 0.01, 115 leaves) was then
+applied unchanged to the main and the final model, retrained daily, and run once on the test year.
+The comparisons were fixed before the search. The existing models keep the default setting; the
+tuned ones are separate models.
+
+| Model (daily retraining) | Validation, default → tuned | Test, default → tuned | Test gap (p-value) |
+|---|---|---|---|
+| Main model (B2) | 13.47 → 13.32 | 17.26 → **16.94** | −0.32 (p < 0.001) |
+| Final model (B3 + recency weights + correction) | 12.39 → 12.34 | 15.58 → 15.62 | +0.04 (p = 0.68) |
+
+- **The default was already near the top:** the search's best validation MAE was 13.73 against 13.77.
+- **Tuning helps the simpler model** a little (−0.3 €/MWh on the test, significant), **but not the
+  final one:** its extra features and error correction probably already capture what slower, finer trees add.
+- The tuned final model trains about 6 times slower, so **the final model keeps the default setting.**
+  Information, not hyperparameters, is the bottleneck: Chronos-2 stays 1.2 €/MWh ahead (p = 0.006).
+
 ## What drives the forecasts
 
 The SHAP values below are for B2, trained on all data before the test and explained on the test hours
@@ -264,7 +286,7 @@ The merit-order picture behind these results:
   - Its training data is not published; contamination of the test is ruled out by its release date only.
   - It could not be checked on the validation year.
   - The B2 daily vs Chronos-2 comparison was not fixed in advance.
-- **One test year and fixed hyperparameters.** No tuning was done. The negative-hour statistics rest on 513 (validation) and 565 (test) hours.
+- **One test year.** The main results use fixed hyperparameters; tuning was tried afterwards, on validation only, and changed little (see [Post-hoc hyperparameter tuning](#post-hoc-hyperparameter-tuning)). The negative-hour statistics rest on 513 (validation) and 565 (test) hours.
 - **LEAR-B2 and the weekly ablation steps A1 and A2 were added after the test year had been run**, in answer to a review: they isolate the model effect in the LEAR comparison and put the whole ablation at one retraining pace. Their design and comparisons were fixed before they were run, and no choice depends on them.
 - **The post-test extension was motivated by a test result.** Each idea was developed and chosen on validation, but the test year has now been used more than once, so its test figures are less clean than the main results.
 - The gas pass-through weights w(RL) are estimated before the validation year and **drift over time** (0.26 at low residual load in 2024 against 0.5–0.8 before).
@@ -284,6 +306,9 @@ python -m src.backtest --period burn_in --models B3_weekly_hl90   # error histor
 python -m src.correction --base B3_weekly_hl90 --period validation --history burn_in
 python -m src.backtest --period test --models B3_daily_hl90   # final model, retrained daily
 python -m src.correction --base B3_daily_hl90 --period test --history validation
+python -m src.tuning search --worker 0 --workers 3 --until 03:30   # one of 3 search workers (overnight)
+python -m src.tuning summary              # results/tuning_validation.csv
+python -m src.tuning final --period test --model B3_daily_hl90_tuned --chunk 0   # chunks 0-2 in parallel, then merge
 python -m src.importance                 # SHAP importance
 python -m src.figures                    # figures
 ```
@@ -295,6 +320,7 @@ src/
   backtest.py     walk-forward, metrics, Diebold-Mariano
   benchmarks.py   MSTL, LEAR, Chronos-2
   correction.py   recent-error correction (second stage)
+  tuning.py       hyperparameter random search (validation only)
   importance.py   SHAP feature importance
   figures.py      figures
 tests/            leakage tests
