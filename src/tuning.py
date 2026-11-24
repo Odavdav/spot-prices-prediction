@@ -11,6 +11,8 @@ Usage:
     python -m src.tuning search --worker 0 --workers 3 --until 03:30   # one worker of the search
     python -m src.tuning summary                                       # results/tuning_validation.csv
     python -m src.tuning final --period test --model B2_daily_tuned
+    python -m src.tuning final --period test --model B3_daily_hl90_tuned --chunk 0   # 0, 1, 2 in parallel
+    python -m src.tuning merge --period test --model B3_daily_hl90_tuned
 """
 import argparse
 import json
@@ -25,6 +27,7 @@ from src.data import load_dataset
 from src.features import add_features
 
 TRIALS_DIR = DATA_PROCESSED / "tuning"   # one JSON per trial, so that workers never collide
+PARTS_DIR = TRIALS_DIR / "parts"         # slices of a final run, merged afterwards
 N_JOBS = 2                               # faster than all cores on this machine (efficiency cores)
 FINAL_MODELS = {"B2_daily_tuned": ("B2", None), "B3_daily_hl90_tuned": ("B3", 90)}
 
@@ -99,11 +102,28 @@ def summary():
     print(t[keep].head(10).round(3).to_string(index=False))
 
 
-def final(period: str, model: str):
+def final(period: str, model: str, chunk: int | None = None, chunks: int = 3):
+    """Daily walk-forward with the best configuration. With `chunk`, only that slice of the period's
+    months (days are independent fits, so slices can run in parallel, one core each; see `merge`)."""
     step, half_life = FINAL_MODELS[model]
     f = add_features(load_dataset())
-    pred = walk_forward(f, step, *PERIODS[period], refit="daily", half_life=half_life, params=best_params())
-    save_prediction(period, pred.rename(model))
+    start, end = PERIODS[period]
+    params = best_params()
+    if chunk is None:
+        pred = walk_forward(f, step, start, end, refit="daily", half_life=half_life, params=params)
+        save_prediction(period, pred.rename(model))
+        return
+    bounds = pd.date_range(start, end, freq="MS")
+    bounds = [bounds[round(i * (len(bounds) - 1) / chunks)] for i in range(chunks + 1)]
+    pred = walk_forward(f, step, f"{bounds[chunk]:%Y-%m-%d}", f"{bounds[chunk + 1]:%Y-%m-%d}",
+                        refit="daily", half_life=half_life, params={**params, "n_jobs": 1})
+    PARTS_DIR.mkdir(parents=True, exist_ok=True)
+    pred.rename(model).to_frame().to_parquet(PARTS_DIR / f"{model}_{period}_{chunk}.parquet")
+
+
+def merge(period: str, model: str, chunks: int = 3):
+    parts = [pd.read_parquet(PARTS_DIR / f"{model}_{period}_{i}.parquet")[model] for i in range(chunks)]
+    save_prediction(period, pd.concat(parts).sort_index())
 
 
 def main():
@@ -117,13 +137,19 @@ def main():
     fi = sub.add_parser("final")
     fi.add_argument("--period", choices=list(PERIODS), required=True)
     fi.add_argument("--model", choices=list(FINAL_MODELS), required=True)
+    fi.add_argument("--chunk", type=int, help="run only this slice of the period (0, 1 or 2)")
+    me = sub.add_parser("merge")
+    me.add_argument("--period", choices=list(PERIODS), required=True)
+    me.add_argument("--model", choices=list(FINAL_MODELS), required=True)
     args = ap.parse_args()
     if args.cmd == "search":
         search(args.worker, args.workers, args.until)
     elif args.cmd == "summary":
         summary()
+    elif args.cmd == "merge":
+        merge(args.period, args.model)
     else:
-        final(args.period, args.model)
+        final(args.period, args.model, args.chunk)
 
 
 if __name__ == "__main__":
