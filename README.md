@@ -96,7 +96,7 @@ feature uses. `tests/test_no_leakage.py` checks the declarations and runs a "tim
 erases everything published after the auction closes and checks that the features for day D do not
 change, around tricky days (clock changes, Easter). A deliberately planted leak makes it fail. Tests
 of the same kind cover the training split (no model is trained on the hours it forecasts), the inputs
-of LEAR, MSTL and Chronos-2, and the error correction.
+of LEAR and Chronos-2, and the error correction.
 
 ## Models
 
@@ -121,9 +121,6 @@ hyperparameters were fixed before the first run and never changed: 800 trees, le
 
 **Benchmarks** (`src/benchmarks.py`).
 - **Naive:** the price of the same hour one week earlier (D-7), also used as the reference error.
-- **MSTL** (Bandara, Hyndman and Bergmeir, 2021), a classical statistical method. It splits the last
-  8 weeks of prices into a trend, a daily cycle and a weekly cycle, and extends each of them. Prices
-  only.
 - **LEAR** (Lago et al., 2021, *Applied Energy* 293), the standard linear benchmark of the literature:
   one LASSO regression per hour, averaged over four estimation windows (56, 84, 1,092 and 1,456 days).
   In its standard form it uses the data of step B1. **LEAR-B2** gets the data of step B2, so that it
@@ -191,19 +188,16 @@ The same data helps the other models too (test year):
 
 ### Models compared on the same data
 
-Models are only compared when they get the same data: prices only (MSTL against Chronos-2), or the
-data of step B2 (LEAR-B2, LightGBM and Chronos-2). All are updated daily.
+Models are only compared when they get the same data, here the data of step B2 (LEAR-B2, LightGBM
+and Chronos-2). All three are updated daily.
 
 Diebold-Mariano tests, test year (negative difference = the first model has the lower error):
 
 | Comparison | Data | MAE difference (€/MWh) | p-value |
 |---|---|---|---|
-| Chronos-2 vs MSTL (added after the test run) | prices only | −3.80 | < 0.001 |
 | LightGBM vs LEAR-B2 | B2 | +0.28 | 0.46 |
 | LightGBM vs Chronos-2 (chosen after seeing the results) | B2 | +2.87 | < 0.001 |
 
-- **Prices only:** Chronos-2 is well ahead of MSTL (19.8 against 23.6 €/MWh), above all on
-  negative-price hours (19.0 against 33.4).
 - **LightGBM and LEAR-B2:** LEAR-B2 is slightly ahead on both years, but not significantly (test:
   17.0 against 17.3 €/MWh, p = 0.46; validation: 12.8 against 13.5, p = 0.07). LightGBM is clearly
   better only on validation's negative-price hours (10.1 against 13.0 €/MWh, p < 0.001), and that
@@ -336,9 +330,8 @@ once on the test year, as separate models.
 The main models were run once on the test year. The following were added or changed afterwards, in
 this order. None of them changed the main LightGBM model or Chronos-2.
 
-1. **Comparisons chosen after seeing the results:** LightGBM (daily) against Chronos-2, and Chronos-2
-   against MSTL. The comparison fixed in advance (weekly LightGBM against Chronos-2) gives the same
-   result.
+1. **A comparison chosen after seeing the results:** LightGBM (daily) against Chronos-2. The
+   comparison fixed in advance (weekly LightGBM against Chronos-2) gives the same result.
 2. **LEAR-B2 and the weekly versions of steps A1 and A2,** added in answer to a review. LEAR-B2 separates
    the model effect from the data effect, and A1 and A2 put the whole sequence of data blocks at one
    retraining frequency. Their design and comparisons were fixed before they were run.
@@ -427,7 +420,7 @@ src/
   get_data.py     download and build the hourly dataset
   features.py     features, data blocks, publication register
   backtest.py     walk-forward, metrics, Diebold-Mariano
-  benchmarks.py   MSTL, LEAR, Chronos-2
+  benchmarks.py   LEAR, Chronos-2
   correction.py   recent-error correction (second stage)
   tuning.py       hyperparameter random search (validation only)
   importance.py   SHAP feature importance
@@ -438,5 +431,5 @@ results/          metrics, tests and figures (versioned)
 
 ## Acknowledgements
 
-Code and analysis were developed with the help of Claude (Anthropic), used as an AI coding assistant.
+Code was developed with the help of Claude (Anthropic), used as an AI coding assistant.
 Research design, data choices and interpretation of the results are my own.

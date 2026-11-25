@@ -64,7 +64,7 @@ REFIT_VARIANTS.update({"B3_weekly": ("B3", "weekly", None), "B3_weekly_hl90": ("
 # the validation year during pre-training (see benchmarks.py).
 _VALIDATION = (["A1", "A2", "B1", "B2", "B2_raw"]
                + list(REFIT_VARIANTS)
-               + ["MSTL", "LEAR_monthly", "LEAR_weekly", "LEAR_daily", "LEAR_B2_daily"])
+               + ["LEAR_monthly", "LEAR_weekly", "LEAR_daily", "LEAR_B2_daily"])
 RUNS = {
     "validation": _VALIDATION,
     # Only the half-life chosen on validation (90 days) is run on the test year
@@ -128,10 +128,8 @@ DM_PAIRS = [
     ("Chronos2_fund", "Chronos2_prices"),  # do fundamentals help a foundation model?
     ("B2_weekly", "Chronos2_fund"),        # LightGBM vs foundation model, same information
     ("LEAR_daily", "LEAR_monthly"),
-    ("B2", "MSTL"),
     # Added after the test run
     ("B2_daily", "Chronos2_fund"),  # final main model vs Chronos-2 (chosen after seeing the results)
-    ("Chronos2_prices", "MSTL"),    # the two price-only models
     # Post-test extension (developed and chosen on validation): mimic Chronos-2's adaptation
     ("B2_weekly_hl90", "B2_weekly"),  # recency weights, 90-day half-life
     ("B2_weekly_hl180", "B2_weekly"),

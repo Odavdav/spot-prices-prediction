@@ -1,5 +1,5 @@
 """Leakage tests: no forecast for day D may use information published after SDAC gate closure
-(12:00 on D-1). Covers the features, the walk-forward split, the benchmarks' inputs (LEAR, MSTL,
+(12:00 on D-1). Covers the features, the walk-forward split, the benchmarks' inputs (LEAR,
 Chronos-2) and the error correction; plus the sign convention of the Diebold-Mariano test.
 
 The tests run on a synthetic dataset: they do not depend on data/ (not versioned).
@@ -178,15 +178,6 @@ def test_walk_forward_trains_only_on_past_deliveries(synthetic, monkeypatch):
     pred = bt.walk_forward(f, "B3", "2024-03-25", "2024-04-12", refit="weekly", half_life=90, verbose=False)
     assert len(fits) == 3 and pred.notna().all()
     assert all(last_train < first_forecast for last_train, first_forecast in fits)
-
-
-def test_mstl_uses_only_past_prices(synthetic):
-    """Scrambling the prices of D and later days must not change the MSTL forecast of D."""
-    from src.benchmarks import mstl_forecasts
-    day, end = "2024-04-08", "2024-04-09"
-    changed = synthetic.copy()
-    changed.loc[(changed["time_local"] >= pd.Timestamp(day, tz=TZ)).to_numpy(), "price_da"] = 1e4
-    pdt.assert_series_equal(mstl_forecasts(synthetic, day, end), mstl_forecasts(changed, day, end))
 
 
 def test_chronos_inputs_use_only_known_values(synthetic, monkeypatch):

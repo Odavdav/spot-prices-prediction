@@ -11,7 +11,6 @@ negative,B2_daily vs LEAR_daily,-4.1107,-4.5734,0.0,95.0,3.0
 negative,B2_rl_weekly vs B2_weekly,0.6081,1.7587,0.0786,95.0,3.0
 negative,B2_rl_weekly vs B2_raw_weekly,0.1691,0.5508,0.5818,95.0,3.0
 negative,LEAR_daily vs LEAR_monthly,-1.3285,-3.2345,0.0012,95.0,3.0
-negative,B2 vs MSTL,-10.2697,-7.7084,0.0,95.0,3.0
 negative,B2_weekly_hl90 vs B2_weekly,0.0905,0.1309,0.8958,95.0,3.0
 negative,B2_weekly_hl180 vs B2_weekly,-0.1868,-0.3511,0.7255,95.0,3.0
 negative,B2_weekly_hl365 vs B2_weekly,-0.0861,-0.2449,0.8066,95.0,3.0
@@ -42,7 +41,6 @@ evening_peak,B2_daily vs LEAR_daily,0.0107,0.0186,0.9852,365.0,5.0
 evening_peak,B2_rl_weekly vs B2_weekly,0.0082,0.0451,0.9641,365.0,5.0
 evening_peak,B2_rl_weekly vs B2_raw_weekly,-0.3955,-1.6148,0.1064,365.0,5.0
 evening_peak,LEAR_daily vs LEAR_monthly,-2.0167,-4.7803,0.0,365.0,5.0
-evening_peak,B2 vs MSTL,-7.6142,-8.5381,0.0,365.0,5.0
 evening_peak,B2_weekly_hl90 vs B2_weekly,0.1412,0.329,0.7421,365.0,5.0
 evening_peak,B2_weekly_hl180 vs B2_weekly,0.0121,0.0436,0.9652,365.0,5.0
 evening_peak,B2_weekly_hl365 vs B2_weekly,-0.1858,-0.8839,0.3767,365.0,5.0
@@ -73,7 +71,6 @@ other,B2_daily vs LEAR_daily,0.5917,1.4799,0.1389,365.0,5.0
 other,B2_rl_weekly vs B2_weekly,0.0015,0.0119,0.9905,365.0,5.0
 other,B2_rl_weekly vs B2_raw_weekly,-0.0354,-0.1766,0.8598,365.0,5.0
 other,LEAR_daily vs LEAR_monthly,-1.17,-6.2572,0.0,365.0,5.0
-other,B2 vs MSTL,-3.5268,-5.2679,0.0,365.0,5.0
 other,B2_weekly_hl90 vs B2_weekly,-0.5386,-1.8293,0.0674,365.0,5.0
 other,B2_weekly_hl180 vs B2_weekly,-0.3574,-1.7781,0.0754,365.0,5.0
 other,B2_weekly_hl365 vs B2_weekly,-0.2297,-1.7454,0.0809,365.0,5.0

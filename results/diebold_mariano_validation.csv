@@ -11,7 +11,6 @@ B2_daily vs LEAR_daily,0.2583,0.6601,0.5092,365.0,5.0
 B2_rl_weekly vs B2_weekly,0.0388,0.3335,0.7387,365.0,5.0
 B2_rl_weekly vs B2_raw_weekly,-0.0579,-0.3029,0.762,365.0,5.0
 LEAR_daily vs LEAR_monthly,-1.3415,-6.9714,0.0,365.0,5.0
-B2 vs MSTL,-4.6048,-7.0417,0.0,365.0,5.0
 B2_weekly_hl90 vs B2_weekly,-0.363,-1.2407,0.2147,365.0,5.0
 B2_weekly_hl180 vs B2_weekly,-0.2674,-1.3651,0.1722,365.0,5.0
 B2_weekly_hl365 vs B2_weekly,-0.2163,-1.6464,0.0997,365.0,5.0

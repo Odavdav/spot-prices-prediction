@@ -13,9 +13,7 @@ negative,B2_rl_weekly vs B2_raw_weekly,1.7159,3.0441,0.0023,98.0,3.0
 negative,Chronos2_fund vs Chronos2_prices,0.5767,0.3135,0.7539,98.0,3.0
 negative,B2_weekly vs Chronos2_fund,0.3379,0.2022,0.8397,98.0,3.0
 negative,LEAR_daily vs LEAR_monthly,0.3507,0.4634,0.6431,98.0,3.0
-negative,B2 vs MSTL,-11.102,-4.177,0.0,98.0,3.0
 negative,B2_daily vs Chronos2_fund,-0.3207,-0.1936,0.8465,98.0,3.0
-negative,Chronos2_prices vs MSTL,-14.0326,-6.556,0.0,98.0,3.0
 negative,B2_weekly_hl90 vs B2_weekly,3.7398,1.3853,0.166,98.0,3.0
 negative,B2_weekly_hl90_corr vs B2_weekly,3.0766,1.053,0.2923,98.0,3.0
 negative,B2_weekly_hl90_corr vs B2_weekly_hl90,-0.6632,-0.7866,0.4315,98.0,3.0
@@ -52,9 +50,7 @@ evening_peak,B2_rl_weekly vs B2_raw_weekly,-0.8164,-2.5035,0.0123,365.0,5.0
 evening_peak,Chronos2_fund vs Chronos2_prices,-8.866,-8.5714,0.0,365.0,5.0
 evening_peak,B2_weekly vs Chronos2_fund,2.9873,3.9684,0.0001,365.0,5.0
 evening_peak,LEAR_daily vs LEAR_monthly,-3.0165,-6.3074,0.0,365.0,5.0
-evening_peak,B2 vs MSTL,-6.8731,-6.4827,0.0,365.0,5.0
 evening_peak,B2_daily vs Chronos2_fund,2.4415,3.555,0.0004,365.0,5.0
-evening_peak,Chronos2_prices vs MSTL,-2.2908,-3.2427,0.0012,365.0,5.0
 evening_peak,B2_weekly_hl90 vs B2_weekly,-1.2858,-1.5692,0.1166,365.0,5.0
 evening_peak,B2_weekly_hl90_corr vs B2_weekly,-2.124,-2.7453,0.006,365.0,5.0
 evening_peak,B2_weekly_hl90_corr vs B2_weekly_hl90,-0.8382,-2.5639,0.0104,365.0,5.0
@@ -91,9 +87,7 @@ other,B2_rl_weekly vs B2_raw_weekly,0.2175,0.8092,0.4184,365.0,5.0
 other,Chronos2_fund vs Chronos2_prices,-5.0448,-7.7188,0.0,365.0,5.0
 other,B2_weekly vs Chronos2_fund,4.0798,6.5663,0.0,365.0,5.0
 other,LEAR_daily vs LEAR_monthly,-2.1969,-5.2736,0.0,365.0,5.0
-other,B2 vs MSTL,-2.4749,-2.8423,0.0045,365.0,5.0
 other,B2_daily vs Chronos2_fund,3.2552,5.715,0.0,365.0,5.0
-other,Chronos2_prices vs MSTL,-3.3537,-7.1708,0.0,365.0,5.0
 other,B2_weekly_hl90 vs B2_weekly,-1.1302,-2.3762,0.0175,365.0,5.0
 other,B2_weekly_hl90_corr vs B2_weekly,-2.4129,-5.186,0.0,365.0,5.0
 other,B2_weekly_hl90_corr vs B2_weekly_hl90,-1.2827,-4.4939,0.0,365.0,5.0

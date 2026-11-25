@@ -1,10 +1,6 @@
-"""Benchmarks: MSTL (classical time series), LEAR (linear benchmark from the literature) and Chronos-2.
+"""Benchmarks: LEAR (linear benchmark from the literature) and Chronos-2.
 
 The naive D-1 and D-7 forecasts are simply the features price_d1 and price_d7 (see backtest.py).
-
-MSTL — prices only. Decomposes the last 8 weeks of hourly prices into trend + daily (24 h) and
-weekly (168 h) seasonality + remainder, then extends each component. Re-estimated every day:
-with no exogenous input, a model frozen for a month would not see recent prices.
 
 LEAR — Lago, Marcjasz, De Schutter and Weron (2021), Applied Energy 293:116983. Penalised linear
 regression (LASSO, penalty chosen by AIC), one model per delivery hour. Inputs for day D: prices of
@@ -36,13 +32,11 @@ import time
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Lasso, LassoLarsIC
-from statsforecast.models import MSTL
 
 from src.config import TZ
 
 LEAR_WINDOWS = (1456, 1092, 84, 56)
 LEAR_LAG_DAYS = 7     # first week of each window: lags only (as in epftoolbox)
-MSTL_WEEKS = 8
 
 
 # --------------------------------------------------------------------- helpers
@@ -66,24 +60,6 @@ def _to_hourly(panel: pd.DataFrame, day: pd.Series, hour: pd.Series) -> np.ndarr
 
 def _period_days(start: str, end: str) -> pd.DatetimeIndex:
     return pd.date_range(start, end, freq="D", inclusive="left")
-
-
-# --------------------------------------------------------------------- MSTL
-def mstl_forecasts(f: pd.DataFrame, start: str, end: str) -> pd.Series:
-    """MSTL forecast of each day of [start, end), from the prices known until the end of D-1."""
-    price = f["price_da"]
-    local = f["time_local"].dt.tz_convert(TZ)
-    out = pd.Series(np.nan, index=f.index)
-    t0 = time.time()
-    for d in _period_days(start, end):
-        day_start = pd.Timestamp(d, tz=TZ)
-        day_end = day_start + pd.Timedelta(days=1)
-        history = price[(local < day_start).to_numpy()].dropna().iloc[-MSTL_WEEKS * 168:]
-        target = f.index[((local >= day_start) & (local < day_end)).to_numpy()]
-        fc = MSTL(season_length=[24, 168]).fit(history.to_numpy()).predict(h=len(target))["mean"]
-        out[target] = fc
-    print(f"  MSTL: {len(_period_days(start, end))} days in {time.time() - t0:.0f} s")
-    return out.loc[out.notna()].rename("MSTL")
 
 
 # --------------------------------------------------------------------- LEAR
@@ -249,7 +225,6 @@ def chronos_forecasts(f: pd.DataFrame, start: str, end: str, covariates: bool) -
 BENCHMARKS = {
     "Chronos2_prices": lambda f, s, e: chronos_forecasts(f, s, e, covariates=False),
     "Chronos2_fund": lambda f, s, e: chronos_forecasts(f, s, e, covariates=True),
-    "MSTL": mstl_forecasts,
     "LEAR_monthly": lambda f, s, e: lear_forecasts(f, s, e, refit="monthly"),
     "LEAR_weekly": lambda f, s, e: lear_forecasts(f, s, e, refit="weekly"),
     "LEAR_daily": lambda f, s, e: lear_forecasts(f, s, e, refit="daily"),
