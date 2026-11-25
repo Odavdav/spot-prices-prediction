@@ -29,8 +29,9 @@ previous year. Error = mean absolute error (MAE) over the 8,760 hours of the yea
 gas and CO₂ prices. All models are updated every day.
 
 1. **Chronos-2 is the most accurate model.** Without any training on French data, it beats LightGBM
-   by 2.9 €/MWh (p < 0.001) when both get the same data. Its advantage disappears on hours with
-   negative prices, where the two are level.
+   by 2.9 €/MWh (p < 0.001) when both get the same data, and by 3.8 when both get only past prices.
+   With the full data set, its advantage disappears on hours with negative prices, where the two are
+   level.
 2. **With the same data, LightGBM and the linear benchmark are level** (17.3 against 17.0 €/MWh,
    p = 0.46).
 3. **The data and the update frequency count for more than the choice between these two models.**
@@ -188,16 +189,20 @@ The same data helps the other models too (test year):
 
 ### Models compared on the same data
 
-Models are only compared when they get the same data, here the data of step B2 (LEAR-B2, LightGBM
-and Chronos-2). All three are updated daily.
+Models are only compared when they get the same data: past prices only (LightGBM, which also gets
+the calendar, against Chronos-2), or the data of step B2 (LEAR-B2, LightGBM and Chronos-2). All are
+updated daily.
 
 Diebold-Mariano tests, test year (negative difference = the first model has the lower error):
 
 | Comparison | Data | MAE difference (€/MWh) | p-value |
 |---|---|---|---|
+| LightGBM vs Chronos-2 | past prices | +3.79 | < 0.001 |
 | LightGBM vs LEAR-B2 | B2 | +0.28 | 0.46 |
 | LightGBM vs Chronos-2 (chosen after seeing the results) | B2 | +2.87 | < 0.001 |
 
+- **Past prices only:** Chronos-2 is ahead of LightGBM by 3.8 €/MWh (19.8 against 23.6), and on every
+  group of hours, including negative-price hours (19.0 against 22.0, p = 0.05).
 - **LightGBM and LEAR-B2:** LEAR-B2 is slightly ahead on both years, but not significantly (test:
   17.0 against 17.3 €/MWh, p = 0.46; validation: 12.8 against 13.5, p = 0.07). LightGBM is clearly
   better only on validation's negative-price hours (10.1 against 13.0 €/MWh, p < 0.001), and that

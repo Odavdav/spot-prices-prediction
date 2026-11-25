@@ -11,6 +11,7 @@ B2_daily vs LEAR_daily,-0.5752,-1.33,0.1835,365.0,5.0
 B2_rl_weekly vs B2_weekly,0.0917,0.508,0.6114,365.0,5.0
 B2_rl_weekly vs B2_raw_weekly,0.1262,0.4873,0.6261,365.0,5.0
 Chronos2_fund vs Chronos2_prices,-5.4055,-7.8314,0.0,365.0,5.0
+A2_daily vs Chronos2_prices,3.7936,6.2482,0.0,365.0,5.0
 B2_weekly vs Chronos2_fund,3.6443,6.2073,0.0,365.0,5.0
 LEAR_daily vs LEAR_monthly,-2.1908,-5.7434,0.0,365.0,5.0
 B2_daily vs Chronos2_fund,2.867,5.2845,0.0,365.0,5.0

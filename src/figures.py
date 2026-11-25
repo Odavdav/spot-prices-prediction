@@ -135,11 +135,11 @@ def fig_retraining():
 
 # --------------------------------------------------------------------- 04. models at equal information
 def fig_models():
-    """Test year, daily updates: Chronos-2 on prices only, then three models with B2's information."""
-    rows = [("Chronos2_prices", "Chronos-2", ORANGE, 0.45),
+    """Test year, daily updates: two models on past prices only, then three with B2's information."""
+    rows = [("A2_daily", "LightGBM", BLUE, 0.45), ("Chronos2_prices", "Chronos-2", ORANGE, 0.45),
             ("LEAR_B2_daily", "LEAR-B2", AQUA, 1), ("B2_daily", "LightGBM", BLUE, 1),
             ("Chronos2_fund", "Chronos-2", ORANGE, 1)]
-    y = np.array([4.0, 2.4, 1.4, 0.4])                 # top to bottom, with a gap between the two groups
+    y = np.array([5.0, 4.0, 2.4, 1.4, 0.4])            # top to bottom, with a gap between the two groups
     m = _metrics("test")
     panels = [("all", "All hours"), ("negative", "Negative-price hours"),
               ("evening_peak", "Evening peak (18-22h)"), ("other", "Other hours")]
@@ -151,12 +151,12 @@ def fig_models():
             ax.text(v + 0.4, yi, f"{v:.1f}", va="center", fontsize=8, color=INK_2)
         naive = m.loc["naive_d7", (reg, "MAE")]
         ax.set_xlim(0, max(vals) * 1.25)
-        ax.set_ylim(-0.3, 5.2)
+        ax.set_ylim(-0.3, 6.2)
         ax.set_title(f"{title}\n(naive D-7: {naive:.1f})")
         ax.set_xlabel("MAE (€/MWh)")
         ax.grid(axis="y", visible=False)
     axes[0].set_yticks(y, [r[1] for r in rows])
-    for yy, lab in [(y[0] + 0.75, "Prices only"), (y[1] + 0.75, "Same information as B2")]:
+    for yy, lab in [(y[0] + 0.75, "Past prices only"), (y[2] + 0.75, "Same information as B2")]:
         axes[0].text(0.01, yy, lab, transform=axes[0].get_yaxis_transform(), ha="left", va="center",
                      fontsize=8.5, fontweight="bold", color=INK_2)
     fig.suptitle("Which model, at equal information? Test year, models updated daily",

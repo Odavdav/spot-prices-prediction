@@ -49,6 +49,7 @@ REFIT_FREQ = {"monthly": "MS", "weekly": "7D", "daily": "D"}
 REFIT_SUFFIX = {"weekly": "_weekly", "daily": "_daily"}
 # LightGBM variants: name -> (step, retraining pace, half-life of the recency weights in days)
 REFIT_VARIANTS = {"A1_weekly": ("A1", "weekly", None), "A2_weekly": ("A2", "weekly", None),
+                  "A2_daily": ("A2", "daily", None),
                   "B1_weekly": ("B1", "weekly", None), "B2_weekly": ("B2", "weekly", None),
                   "B2_daily": ("B2", "daily", None), "B2_rl_weekly": ("B2_rl", "weekly", None),
                   "B2_raw_weekly": ("B2_raw", "weekly", None)}
@@ -126,6 +127,7 @@ DM_PAIRS = [
     ("B2_rl", "B2"),                # same at the monthly pace (crisis period)
     ("B2_rl", "B2_raw"),
     ("Chronos2_fund", "Chronos2_prices"),  # do fundamentals help a foundation model?
+    ("A2_daily", "Chronos2_prices"),       # LightGBM vs foundation model, past prices only
     ("B2_weekly", "Chronos2_fund"),        # LightGBM vs foundation model, same information
     ("LEAR_daily", "LEAR_monthly"),
     # Added after the test run
